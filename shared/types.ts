@@ -383,6 +383,8 @@ export interface GameView {
   theme: ThemeId
   /** 刚摇出的火锅辣度 */
   spice: { id: number; level: string; mult: number; player: string } | null
+  /** 火锅彩蛋这一局是否已经揭晓过；揭晓前格子上只提示有彩蛋，不说是什么 */
+  spiceSeen: boolean
   /** 掷出点数后还要自己走的步数 */
   stepsLeft: number
   card: DrawnCard | null

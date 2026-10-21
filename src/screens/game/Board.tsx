@@ -5,7 +5,7 @@ import { Avatar } from '@/components/art/Avatar'
 import { CityBadge } from '@/components/art/CityBadge'
 import { CityIcon } from '@/components/art/CityIcon'
 import { Flag } from '@/components/art/Flag'
-import { Buildings, ChanceMark, Chest, GoArrow, JailBars } from '@/components/art/icons'
+import { Buildings, ChanceMark, Chest, EasterEgg, GoArrow, JailBars, PrizeRays } from '@/components/art/icons'
 import { DeltaPop } from '@/components/game/CashTicker'
 import { sfx } from '@/lib/sound'
 import { cn } from '@/lib/utils'
@@ -178,8 +178,8 @@ function TileCell({
 }: {
   index: number
   tile: Tile
-  /** 这一格有特殊玩法（重庆火锅），角上亮一个小火苗 */
-  special?: boolean
+  /** 这一格藏着彩蛋（重庆火锅）：没揭晓时角上一颗金箔彩蛋，揭晓后换成火苗 */
+  special?: 'hidden' | 'revealed'
   own?: Ownership
   ownerColor?: string
   pot: number
@@ -220,10 +220,19 @@ function TileCell({
         </div>
       )}
       <TileFace tile={tile} side={side} pot={pot} />
-      {special && (
+      {special === 'revealed' && (
         <span className="pointer-events-none absolute top-[0.4cqw] right-[0.4cqw] z-10 flex size-[2.6cqw] items-center justify-center rounded-full bg-[#fff0eb] shadow-[0_0_0.8cqw_rgb(255_107_53/0.8)] animate-[heartbeat_1.6s_ease-in-out_infinite]">
           <Flame className="size-[1.9cqw] fill-[#ff6b35] text-[#d63c2f]" />
         </span>
+      )}
+      {special === 'hidden' && (
+        <>
+          {/* 彩蛋还没揭晓：角上一颗金箔巧克力蛋，背后的金光慢慢转 */}
+          <span className="pointer-events-none absolute top-[0.2cqw] right-[0.2cqw] z-10 flex size-[3.6cqw] items-center justify-center">
+            <PrizeRays className="absolute inset-[-35%] opacity-80" />
+            <EasterEgg className="relative w-[2.5cqw] drop-shadow-[0_0.2cqw_0.3cqw_rgb(0_0_0/0.35)]" />
+          </span>
+        </>
       )}
       {ownerColor && side !== 'corner' && (
         <div
@@ -344,7 +353,7 @@ export function Board({
             key={i}
             index={i}
             tile={tile}
-            special={themeOf(game.theme).spicy === i}
+            special={themeOf(game.theme).spicy === i ? (game.spiceSeen ? 'revealed' : 'hidden') : undefined}
             own={game.owners[i]}
             ownerColor={game.owners[i] ? colorOf[game.owners[i]!.owner] : undefined}
             pot={game.pot}

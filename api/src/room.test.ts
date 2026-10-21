@@ -412,6 +412,19 @@ describe('中国城市主题', () => {
     expect(room.board[39]!.kind === 'country' && room.board[39]!.price).toBe(Math.max(...prices))
   })
 
+  test('火锅彩蛋开局时没有揭晓，停在无主的重庆上也不揭晓', () => {
+    const { room, g, act } = setup(2, { theme: 'china' })
+    expect(g.spiceSeen).toBe(false)
+    g.players[0]!.pos = 36
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    expect(g.phase).toBe('buy')
+    act(0, { type: 'buy' })
+    expect(g.spiceSeen).toBe(false)
+    expect(g.spice).toBeNull()
+  })
+
   test('重庆售价 $500，其他格子价格和世界地图一样', () => {
     const { room, g, act } = setup(2, { theme: 'china' })
     const china = room.board
@@ -449,6 +462,7 @@ describe('中国城市主题', () => {
     room.rng = () => 0.99
     while (g.phase === 'move') act(0, { type: 'step' })
     expect(g.spice!.level).toBe('超级无敌特特特特特特特特特变态辣')
+    expect(g.spiceSeen).toBe(true)
     expect(g.players[0]!.cash).toBe(1500 - 50 * 3)
     expect(g.players[1]!.cash).toBe(1500 + 50 * 3)
   })

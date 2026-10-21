@@ -479,6 +479,7 @@ export class Room {
       lastRoll: null,
       theme: this.d.config.theme,
       spice: null,
+      spiceSeen: false,
       shakeUntil: null,
       shakeExtendedAt: 0,
       shakeTaps: 0,
@@ -769,6 +770,7 @@ export class Room {
     if (this.theme.spicy === p.pos) {
       const s = this.spice()
       g.spice = { id: ++g.seq, level: s.level, mult: s.mult, player: p.id }
+      g.spiceSeen = true
       rent = Math.round(rent * s.mult)
       this.log(`${t.name}火锅辣度：${s.level}${s.mult !== 1 ? `，租金 ×${s.mult}` : ''}`, p.id)
     }
@@ -1180,7 +1182,7 @@ export class Room {
 
   static gameView(g: GameState): GameView {
     const { decks: _d, afterDebt: _a, seq: _s, shakeUntil, shakeExtendedAt: _e, ...view } = g
-    return { ...view, theme: view.theme ?? 'world', spice: view.spice ?? null, shakeTaps: view.shakeTaps ?? 0, shakeMs: shakeUntil ? Math.max(0, shakeUntil - Date.now()) : null }
+    return { ...view, theme: view.theme ?? 'world', spice: view.spice ?? null, spiceSeen: view.spiceSeen ?? false, shakeTaps: view.shakeTaps ?? 0, shakeMs: shakeUntil ? Math.max(0, shakeUntil - Date.now()) : null }
   }
 
   /** 回放：用当时的对局状态拼出旁观视角 */

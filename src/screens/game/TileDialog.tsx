@@ -14,7 +14,7 @@ import {
 import { Flame } from 'lucide-react'
 import { Avatar } from '@/components/art/Avatar'
 import { TileMark } from '@/components/art/TileMark'
-import { Buildings } from '@/components/art/icons'
+import { Buildings, EasterEgg, PrizeRays } from '@/components/art/icons'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { money } from '@/lib/rules'
 import { cn } from '@/lib/utils'
@@ -90,7 +90,23 @@ export function TileDialog({
               </div>
             )}
 
-            {tile === themeOf(game.theme).spicy && (
+            {tile === themeOf(game.theme).spicy && !game.spiceSeen && (
+              <div className="relative mx-3 flex items-center gap-3 overflow-hidden rounded-lg border border-[#b8860b]/60 bg-[#2a1a12] px-3 py-3 shadow-[inset_0_0_0_1px_rgb(247_224_138/0.15)]">
+                <span className="relative flex size-12 shrink-0 items-center justify-center">
+                  <PrizeRays className="absolute inset-[-40%] opacity-70" />
+                  <EasterEgg className="relative w-9 drop-shadow-[0_2px_4px_rgb(0_0_0/0.5)]" />
+                </span>
+                <div className="relative min-w-0 flex-1 space-y-2">
+                  <div className="font-display text-[15px] leading-tight text-[#f7e08a]">莫闹话……来了你就晓得了</div>
+                  <div className="scratch-foil flex h-7 items-center rounded-md pr-9 pl-3">
+                    <span className="font-display text-base tracking-[0.5em] text-[#8a5d00] [text-shadow:0_1px_0_rgb(255_246_208/0.8)]">？？？</span>
+                    <span className="scratch-peek absolute top-1/2 right-2 h-5 w-6 -translate-y-1/2" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {tile === themeOf(game.theme).spicy && game.spiceSeen && (
               <div className="mx-3 space-y-0.5 rounded-lg border border-[#f5a08a] bg-[#fff0eb] px-2 py-1.5">
                 <div className="flex items-center gap-1 px-1 pb-0.5 text-xs font-semibold text-brick">
                   <Flame className="size-3.5 fill-[#ff6b35]" /> 火锅辣度

@@ -1,4 +1,4 @@
-import type { SVGProps } from 'react'
+import { useId, type SVGProps } from 'react'
 import { cn } from '@/lib/utils'
 
 type P = SVGProps<SVGSVGElement>
@@ -97,6 +97,57 @@ export function ChanceMark({ className, ...p }: P) {
         strokeLinejoin="round"
       />
       <circle cx="25" cy="40" r="4.5" fill="#f28c28" stroke="#2b2118" strokeWidth="2" />
+    </svg>
+  )
+}
+
+const EGG = 'M16 2 C23 2 28 12 28 19 C28 26 22.5 30 16 30 C9.5 30 4 26 4 19 C4 12 9 2 16 2 Z'
+
+/** 彩蛋：金箔包着的巧克力蛋，箔纸上有一道光来回扫，顶上撕开一角露出巧克力 */
+export function EasterEgg({ className, ...p }: P) {
+  const id = useId().replace(/:/g, '')
+  return (
+    <svg viewBox="0 0 32 32" className={className} {...p}>
+      <defs>
+        <clipPath id={`${id}c`}>
+          <path d={EGG} />
+        </clipPath>
+        <linearGradient id={`${id}f`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#fff1b8" />
+          <stop offset="0.35" stopColor="#e8b923" />
+          <stop offset="0.6" stopColor="#b8860b" />
+          <stop offset="0.8" stopColor="#f5d35c" />
+          <stop offset="1" stopColor="#9a6b00" />
+        </linearGradient>
+        <linearGradient id={`${id}s`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#fff" stopOpacity="0" />
+          <stop offset="0.5" stopColor="#fff" stopOpacity="0.85" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+          <animateTransform attributeName="gradientTransform" type="translate" values="-1.2 0; -1.2 0; 1.2 0" keyTimes="0; 0.55; 1" dur="2.6s" repeatCount="indefinite" />
+        </linearGradient>
+      </defs>
+      <g clipPath={`url(#${id}c)`}>
+        <rect width="32" height="32" fill={`url(#${id}f)`} />
+        {/* 箔纸的褶皱 */}
+        <path d="M7 12 L12 14 L9 18 L14 21 M20 9 L24 13 L21 16 M18 23 L23 21 L26 25 M6 24 L10 26" fill="none" stroke="#8a5d00" strokeWidth="0.7" opacity="0.55" />
+        <path d="M8 11 L13 13 M21 8 L25 12 M17 22 L22 20" fill="none" stroke="#fff6d0" strokeWidth="0.7" opacity="0.8" />
+        {/* 撕开的一角，露出巧克力 */}
+        <path d="M11 2 L21 2 L20.5 6 L18.5 4.5 L17 7 L15 5 L13.5 7.5 L12 5 Z" fill="#5a3218" />
+        <path d="M12.5 3.5 Q15 2.8 17.5 3.4" fill="none" stroke="#8a5530" strokeWidth="0.8" />
+        <rect width="32" height="32" fill={`url(#${id}s)`} transform="rotate(-25 16 16)" />
+      </g>
+      <path d={EGG} fill="none" stroke="#6b4a00" strokeWidth="1.3" />
+    </svg>
+  )
+}
+
+/** 奖品的光芒：一圈金色的放射光，慢慢转 */
+export function PrizeRays({ className, ...p }: P) {
+  return (
+    <svg viewBox="0 0 100 100" className={cn('animate-[orbit_14s_linear_infinite]', className)} {...p}>
+      {Array.from({ length: 12 }, (_, i) => (
+        <path key={i} d="M50 50 L46 0 L54 0 Z" fill="#f5d35c" opacity={i % 2 ? 0.35 : 0.6} transform={`rotate(${i * 30} 50 50)`} />
+      ))}
     </svg>
   )
 }
