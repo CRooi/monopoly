@@ -1,7 +1,6 @@
-import { Droplets, Plane, Zap } from 'lucide-react'
 import {
   AIRLINE_RENT,
-  BOARD,
+  boardFor,
   GROUP_COLOR,
   UTILITY_MULT,
   isBuyable,
@@ -11,7 +10,7 @@ import {
   type GameView,
 } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
-import { Flag } from '@/components/art/Flag'
+import { TileMark } from '@/components/art/TileMark'
 import { Buildings } from '@/components/art/icons'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { money } from '@/lib/rules'
@@ -41,11 +40,12 @@ export function TileDialog({
   send: (m: ClientMessage) => void
   onClose: () => void
 }) {
-  const t = tile === null ? null : BOARD[tile]!
+  const board = boardFor(game.theme)
+  const t = tile === null ? null : board[tile]!
   const own = tile === null ? undefined : game.owners[tile]
   const owner = own ? game.players.find((p) => p.id === own.owner) : undefined
   const buyable = t && isBuyable(t)
-  const ownedCount = (kind: 'airline' | 'utility') => (own ? BOARD.filter((x, i) => x.kind === kind && game.owners[i]?.owner === own.owner).length : 0)
+  const ownedCount = (kind: 'airline' | 'utility') => (own ? board.filter((x, i) => x.kind === kind && game.owners[i]?.owner === own.owner).length : 0)
 
   return (
     <Dialog open={tile !== null} onOpenChange={(o) => !o && onClose()}>
@@ -57,9 +57,7 @@ export function TileDialog({
               style={{ background: t.kind === 'country' ? GROUP_COLOR[t.group] : '#f1e7cf' }}
             >
               <DialogTitle className={cn('flex items-center justify-center gap-2 font-display text-2xl', t.kind === 'country' && 'text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.35)]')}>
-                {t.kind === 'country' && <Flag iso={t.iso} className="w-8" />}
-                {t.kind === 'airline' && <Plane className="size-6 text-[#1c63c9]" />}
-                {t.kind === 'utility' && (t.name.includes('电') ? <Zap className="size-6 fill-gold" /> : <Droplets className="size-6 fill-[#7cc8f0] text-[#1c63c9]" />)}
+                <TileMark tile={t} size={30} />
                 {t.name}
               </DialogTitle>
               <DialogDescription className={cn('text-center', t.kind === 'country' ? 'text-white/90' : 'text-ink/70')}>

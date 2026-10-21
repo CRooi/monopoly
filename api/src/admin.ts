@@ -78,6 +78,8 @@ export function snapshotBefore(room: Room): BeforeAction {
 
 /** 在一次成功的操作之后记录事件；没有改变对局的操作会被忽略 */
 export function recordAction(room: Room, userId: string, msg: ClientMessage, before: BeforeAction, disband = false) {
+  // 摇骰子时的连点不记，骰子停下出点数时会记一次
+  if (msg.type === 'shake') return
   try {
     const g = room.d.game
     const actor = actorLabel(room, userId)

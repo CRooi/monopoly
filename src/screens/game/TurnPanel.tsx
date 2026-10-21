@@ -1,22 +1,172 @@
-import { Crown, DoorOpen, Flag as FlagIcon, KeyRound, Landmark, Plane } from 'lucide-react'
-import { BAIL, BOARD, GROUP_COLOR, isBuyable, type ClientMessage, type GameView, type StateView } from '@shared/types'
+import { useEffect, useRef, useState } from 'react'
+import { Crown, DoorOpen, Flag as FlagIcon, Flame, KeyRound, Landmark } from 'lucide-react'
+import { BAIL, GROUP_COLOR, SPICE_LEVELS, boardFor, themeOf, isBuyable, type ClientMessage, type GameView, type StateView } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
-import { Flag } from '@/components/art/Flag'
+import { TileMark } from '@/components/art/TileMark'
 import { ChanceMark, Chest, Die } from '@/components/art/icons'
 import { Button } from '@/components/ui/button'
 import type { ConfirmRequest } from '@/components/game/ConfirmDialog'
 import { money } from '@/lib/rules'
+import { sfx } from '@/lib/sound'
 import { cn } from '@/lib/utils'
+
+/** 摇骰子时每点一下飘出的字，按第几下选，所有人看到的一样 */
+const TAP_WORDS = ['运气 +1', '手气 +1', '财运 +1', '大！', '双数 +1', '稳住', '发发发', '好运 +1', '冲！', '六六六', '财神保佑', '人品 +1']
+
+function TapFloats({ taps }: { taps: number }) {
+  const [items, setItems] = useState<{ n: number; text: string; x: number; y: number }[]>([])
+  const seen = useRef(taps)
+  useEffect(() => {
+    const from = seen.current
+    seen.current = taps
+    if (taps <= from) return
+    // 一次推来好几下（网络抖动）时最多补 4 个，免得糊成一团
+    const fresh = Array.from({ length: Math.min(4, taps - from) }, (_, i) => taps - i).map((n) => ({
+      n,
+      text: TAP_WORDS[(n * 7) % TAP_WORDS.length]!,
+      // 左右错开、起点高低错开，连点时不挤成一团
+      x: ((n * 53) % 150) - 75,
+      y: (n * 17) % 24,
+    }))
+    sfx.tap()
+    setItems((cur) => [...cur, ...fresh].slice(-12))
+    const t = setTimeout(() => setItems((cur) => cur.filter((x) => !fresh.includes(x))), 1300)
+    return () => clearTimeout(t)
+  }, [taps])
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-0 h-0">
+      {items.map((it) => (
+        <span
+          key={it.n}
+          className="animate-tap-float absolute left-1/2 font-display text-sm whitespace-nowrap text-brick [text-shadow:0_1px_0_white,0_0_6px_white]"
+          style={{ marginLeft: it.x, top: it.y }}
+        >
+          {it.text}
+        </span>
+      ))}
+    </div>
+  )
+}
 
 function Dice({ game }: { game: GameView }) {
   const roll = game.lastRoll
-  const [a, b] = roll?.dice ?? [1, 1]
-  const size = 'size-[clamp(30px,7cqw,50px)]'
+  const shaking = game.shakeMs !== null
+  const [faces, setFaces] = useState<[number, number]>([1, 1])
+  // 摇的时候不停换面、响骰子声，停下时落在真正的点数上
+  useEffect(() => {
+    if (!shaking) return
+    sfx.dice()
+    const f = setInterval(() => setFaces([1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)]), 80)
+    const s = setInterval(() => sfx.dice(), 750)
+    return () => {
+      clearInterval(f)
+      clearInterval(s)
+    }
+  }, [shaking])
+  const landed = useRef(roll?.id)
+  useEffect(() => {
+    if (!roll || roll.id === landed.current) return
+    landed.current = roll.id
+    sfx.land()
+  }, [roll])
+  const [a, b] = shaking ? faces : (roll?.dice ?? [1, 1])
+  const size = 'size-[clamp(34px,8cqw,58px)]'
+  const double = !shaking && roll && roll.dice[0] === roll.dice[1]
   return (
-    <div key={roll?.id ?? 0} className="flex gap-2.5">
-      <Die value={a} className={cn(size, roll && 'animate-tumble')} />
-      <Die value={b} className={cn(size, roll && 'animate-tumble')} />
+    <div className="relative flex flex-col items-center gap-1">
+      <TapFloats taps={game.shakeTaps} />
+      <div key={shaking ? 'shaking' : (roll?.id ?? 0)} className={cn('flex gap-3', shaking ? 'animate-shake' : roll && 'animate-pop')}>
+        <Die value={a} className={size} />
+        <Die value={b} className={size} />
+      </div>
+      <div className="h-4 text-xs text-ink/55">
+        {!shaking && roll && (
+          <>
+            {roll.dice[0] + roll.dice[1]} 点{double && <span className="ml-1 font-semibold text-brick">双数</span>}
+          </>
+        )}
+      </div>
     </div>
+  )
+}
+
+/** 重庆火锅辣度：先在几档之间跳一会儿，再停在摇出的那档 */
+function SpiceView({ game }: { game: GameView }) {
+  const spice = game.spice
+  const [spinning, setSpinning] = useState<number | null>(null)
+  const seen = useRef(spice?.id)
+  useEffect(() => {
+    if (!spice || spice.id === seen.current) return
+    seen.current = spice.id
+    let i = 0
+    setSpinning(0)
+    const t = setInterval(() => {
+      i++
+      sfx.tap()
+      if (i >= 12) {
+        clearInterval(t)
+        setSpinning(null)
+        sfx.land()
+      } else setSpinning(i % SPICE_LEVELS.length)
+    }, 110)
+    return () => clearInterval(t)
+  }, [spice])
+  if (!spice) return null
+  const shown = spinning !== null ? SPICE_LEVELS[spinning]! : { level: spice.level, mult: spice.mult }
+  const name = boardFor(game.theme)[themeOf(game.theme).spicy ?? 39]!.name
+  return (
+    <div className={cn('flex w-full items-center gap-2.5 rounded-lg border border-[#f5a08a] bg-[#fff0eb] px-3 py-2', spinning === null && 'animate-pop')}>
+      <span className="flex shrink-0">
+        {Array.from({ length: 3 }, (_, i) => (
+          <Flame key={i} className={cn('size-5', i < shown.mult ? 'fill-[#ff6b35] text-[#d63c2f]' : 'text-ink/15')} />
+        ))}
+      </span>
+      <div className="min-w-0 text-left">
+        <div className="text-[11px] font-semibold text-brick">{name}火锅</div>
+        <div className="text-[13px] leading-snug">
+          {shown.level}
+          {spinning === null && shown.mult > 1 && <span className="ml-1 font-semibold text-brick">租金 ×{shown.mult}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** 本回合发生的事，像庄家在旁边报幕；最近的在最下面 */
+function TurnFeed({ game }: { game: GameView }) {
+  const log = game.log
+  let start = log.length - 1
+  while (start >= 0 && !log[start]!.text.startsWith('轮到 ')) start--
+  const lines = log.slice(start + 1).slice(-3)
+  if (!lines.length) return null
+  return (
+    <div className="w-full space-y-0.5 border-t border-dashed border-ink/15 pt-2 text-left">
+      {lines.map((l, i) => (
+        <div key={l.id} className={cn('animate-rise truncate text-xs leading-snug', i === lines.length - 1 ? 'text-ink' : 'text-ink/45')}>
+          {l.text}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** 背面朝上的卡，自己点开 */
+function CardBack({ deck, onFlip }: { deck: 'chance' | 'chest'; onFlip?: () => void }) {
+  const chance = deck === 'chance'
+  return (
+    <button
+      type="button"
+      disabled={!onFlip}
+      onClick={onFlip}
+      className={cn(
+        'group flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition',
+        chance ? 'border-[#f0b77a] bg-[repeating-linear-gradient(45deg,#ffe2c2_0_6px,#fff1e0_6px_12px)]' : 'border-[#9fd0ef] bg-[repeating-linear-gradient(45deg,#d3ecfb_0_6px,#e8f5fd_6px_12px)]',
+        onFlip && 'animate-wiggle hover:-translate-y-0.5 hover:shadow-md',
+      )}
+    >
+      {chance ? <ChanceMark className="size-8 shrink-0" /> : <Chest className="size-8 shrink-0" />}
+      <span className={cn('font-display text-base', chance ? 'text-[#c46a14]' : 'text-[#1c63c9]')}>{onFlip ? `翻开${chance ? '机会' : '命运'}卡` : `正在抽${chance ? '机会' : '命运'}卡`}</span>
+    </button>
   )
 }
 
@@ -28,7 +178,7 @@ function CardView({ game }: { game: GameView }) {
     <div
       key={card.id}
       className={cn(
-        'animate-pop flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left',
+        'animate-flip-in flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left',
         chance ? 'border-[#f0b77a] bg-[#fff1e0]' : 'border-[#9fd0ef] bg-[#e8f5fd]',
       )}
     >
@@ -58,20 +208,46 @@ export function TurnPanel({
   onDone?: () => void
 }) {
   const g = state.game!
-  if (g.phase === 'over') return <Result game={g} onDone={onDone} />
-
   const cur = g.players[g.turn]!
   const me = g.players.find((p) => p.id === state.me.id)
-  const mine = me?.id === cur.id
-  const tile = BOARD[cur.pos]!
+  const mine = me?.id === cur.id && g.phase !== 'over'
+  const shaking = g.shakeMs !== null
+
+  // 电脑上按空格：摇骰子（按住一直摇），或者走一步
+  const primary = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    primary.current = !mine ? null : g.phase === 'roll' ? () => send({ type: 'shake' }) : g.phase === 'move' ? () => send({ type: 'step' }) : null
+  })
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== ' ' || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (document.querySelector('[role="dialog"],[role="alertdialog"]')) return
+      if (!primary.current) return
+      e.preventDefault()
+      // 走一步不跟着按键自动重复，一下一步
+      if (e.repeat && g.phase === 'move') return
+      primary.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [g.phase])
+
+  if (g.phase === 'over') return <Result game={g} onDone={onDone} />
+  const tile = boardFor(g.theme)[cur.pos]!
 
   let status: string
   switch (g.phase) {
     case 'roll':
-      status = cur.inJail ? '在监狱中' : g.again ? '双数，再掷一次' : '准备掷骰子'
+      status = shaking ? '摇骰子中' : cur.inJail ? '在监狱中' : g.again ? '双数，再摇一次' : '准备摇骰子'
+      break
+    case 'move':
+      status = `还要走 ${g.stepsLeft} 步`
       break
     case 'buy':
       status = '考虑是否购买'
+      break
+    case 'draw':
+      status = '抽卡中'
       break
     case 'debt':
       status = '正在凑钱'
@@ -93,11 +269,15 @@ export function TurnPanel({
 
       <Dice game={g} />
       <CardView game={g} />
+      <SpiceView game={g} />
+      {g.phase === 'draw' && (tile.kind === 'chance' || tile.kind === 'chest') && (
+        <CardBack deck={tile.kind} onFlip={mine ? () => send({ type: 'drawCard' }) : undefined} />
+      )}
 
       {g.phase === 'buy' && isBuyable(tile) && (
         <div className="flex w-full items-center gap-2 rounded-lg border border-ink/10 bg-paper px-3 py-2">
           {tile.kind === 'country' && <span className="h-5 w-1 rounded-full" style={{ background: GROUP_COLOR[tile.group] }} />}
-          {tile.kind === 'country' ? <Flag iso={tile.iso} className="w-6" /> : tile.kind === 'airline' ? <Plane className="size-4 text-[#1c63c9]" /> : null}
+          <TileMark tile={tile} size={24} />
           <span className="text-sm font-medium">{tile.name}</span>
           <span className="ml-auto text-sm font-semibold tabular-nums text-cash">{money(tile.price)}</span>
         </div>
@@ -122,15 +302,20 @@ export function TurnPanel({
         <div className="flex w-full flex-wrap justify-center gap-2">
           {g.phase === 'roll' && (
             <>
-              <Button variant="red" size="lg" className="min-w-24 flex-1" onClick={() => send({ type: 'roll' })}>
-                掷骰子
+              <Button
+                variant="red"
+                size="lg"
+                className={cn('min-w-24 flex-1 select-none', shaking && 'animate-shake')}
+                onClick={() => send({ type: 'shake' })}
+              >
+                {shaking ? '继续摇' : '摇骰子'}
               </Button>
-              {cur.inJail && (
+              {cur.inJail && !shaking && (
                 <Button variant="paper" size="lg" disabled={cur.cash < BAIL} onClick={() => send({ type: 'payBail' })}>
                   <Landmark /> 保释 {money(BAIL)}
                 </Button>
               )}
-              {cur.inJail && cur.jailCards > 0 && (
+              {cur.inJail && !shaking && cur.jailCards > 0 && (
                 <Button variant="paper" size="lg" onClick={() => send({ type: 'useJailCard' })}>
                   <KeyRound /> 出狱卡
                 </Button>
@@ -172,6 +357,12 @@ export function TurnPanel({
               </Button>
             </>
           )}
+          {g.phase === 'move' && (
+            <Button variant="red" size="lg" className="min-w-24 flex-1 select-none" onClick={() => send({ type: 'step' })}>
+              走一步
+              <span className="ml-1 rounded-full bg-white/25 px-1.5 text-xs tabular-nums">{g.stepsLeft}</span>
+            </Button>
+          )}
           {g.phase === 'end' && (
             <Button variant="red" size="lg" className="min-w-24 flex-1" onClick={() => send({ type: 'endTurn' })}>
               结束回合
@@ -179,6 +370,7 @@ export function TurnPanel({
           )}
         </div>
       )}
+      <TurnFeed game={g} />
     </div>
   )
 }

@@ -9,7 +9,18 @@ import { TurnPanel } from './TurnPanel'
 const noop = () => {}
 
 /** 只读的对局画面：大屏、后台实时观看和回放共用；extraTab 为右侧额外的标签页（如回放时间轴） */
-export function WatchView({ state, extraTab, className }: { state: StateView; extraTab?: { label: string; content: ReactNode }; className?: string }) {
+export function WatchView({
+  state,
+  extraTab,
+  className,
+  live: isLive,
+}: {
+  state: StateView
+  extraTab?: { label: string; content: ReactNode }
+  className?: string
+  /** 实时画面，播放音效；回放时静音 */
+  live?: boolean
+}) {
   const g = state.game
   const [tab, setTab] = useState<'players' | 'log' | 'extra'>(extraTab ? 'extra' : 'players')
   const [tile, setTile] = useState<number | null>(null)
@@ -22,7 +33,7 @@ export function WatchView({ state, extraTab, className }: { state: StateView; ex
   return (
     <div className={cn('flex h-full min-h-0 flex-col gap-4 lg:flex-row', className)}>
       <div className="mx-auto aspect-square h-auto w-full max-w-[min(100%,calc(100dvh-8rem))] shrink-0 lg:mx-0 lg:h-full lg:w-auto lg:max-w-[calc(100%-22rem)]">
-        <Board game={g} onTileClick={setTile}>
+        <Board game={g} onTileClick={setTile} quiet={!isLive}>
           <TurnPanel state={state} send={noop} confirm={noop} onAssets={noop} />
         </Board>
       </div>

@@ -1,9 +1,9 @@
-import { ROUND_OPTIONS, START_CASH_OPTIONS, type RoomConfig } from '@shared/types'
+import { ROUND_OPTIONS, START_CASH_OPTIONS, THEME_OPTIONS, THEMES, type RoomConfig } from '@shared/types'
 import { Switch } from '@/components/ui/switch'
 import { money } from '@/lib/rules'
 import { cn } from '@/lib/utils'
 
-function Choice<T extends number>({ options, value, onChange, label, disabled }: { options: T[]; value: T; onChange: (v: T) => void; label: (v: T) => string; disabled?: boolean }) {
+function Choice<T extends number | string>({ options, value, onChange, label, disabled }: { options: T[]; value: T; onChange: (v: T) => void; label: (v: T) => string; disabled?: boolean }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {options.map((o) => (
@@ -38,6 +38,9 @@ export function ConfigForm({ value, onChange, disabled }: { value: RoomConfig; o
   const set = (patch: Partial<RoomConfig>) => onChange({ ...value, ...patch })
   return (
     <div className="space-y-4">
+      <Field label="地图">
+        <Choice options={THEME_OPTIONS} value={value.theme} onChange={(v) => set({ theme: v })} label={(v) => THEMES[v].name} disabled={disabled} />
+      </Field>
       <Field label="初始资金">
         <Choice options={START_CASH_OPTIONS} value={value.startCash} onChange={(v) => set({ startCash: v })} label={money} disabled={disabled} />
       </Field>

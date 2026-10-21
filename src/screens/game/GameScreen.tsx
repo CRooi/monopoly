@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Flag as FlagIcon, LogOut, Power, ScrollText, Tv, Users, Wallet, ArrowLeftRight } from 'lucide-react'
+import { Flag as FlagIcon, LogOut, Power, ScrollText, Tv, Users, Volume2, VolumeX, Wallet, ArrowLeftRight } from 'lucide-react'
 import { toast } from 'sonner'
-import type { ClientMessage, StateView } from '@shared/types'
+import type { ClientMessage, GameView, StateView } from '@shared/types'
 import { Logo } from '@/components/art/icons'
 import { ConfirmDialog, type ConfirmRequest } from '@/components/game/ConfirmDialog'
 import { ConnBadge } from '@/components/game/ConnBadge'
 import { Button } from '@/components/ui/button'
 import type { ConnStatus } from '@/hooks/useRoomSocket'
+import { setMuted, sfx, useMuted } from '@/lib/sound'
 import { cn } from '@/lib/utils'
 import { Board } from './Board'
 import { AssetsPanel, LogPanel, PlayersPanel } from './Panels'
@@ -15,6 +16,24 @@ import { TradeCard, TradeDialog } from './Trade'
 import { TurnPanel } from './TurnPanel'
 
 type Tab = 'players' | 'assets' | 'trades' | 'log'
+
+/** 局面变化时的音效，只在自己身上发生的才响，避免一直吵 */
+function useGameSounds(g: GameView, meId: string) {
+  const prev = useRef(g)
+  useEffect(() => {
+    const p = prev.current
+    prev.current = g
+    if (p === g || p.id !== g.id) return
+    if (g.card && g.card.id !== p.card?.id) sfx.card()
+    const owned = (x: GameView) => Object.values(x.owners).reduce((n, o) => n + 1 + o.houses, 0)
+    if (owned(g) > owned(p)) sfx.buy()
+    const jailed = g.players.some((x) => x.inJail && !p.players.find((y) => y.id === x.id)?.inJail)
+    if (jailed) sfx.jail()
+    const before = p.players.find((x) => x.id === meId)?.cash
+    const after = g.players.find((x) => x.id === meId)?.cash
+    if (before !== undefined && after !== undefined && after !== before) (after > before ? sfx.coin : sfx.pay)()
+  }, [g, meId])
+}
 
 export function GameScreen({
   state,
@@ -52,8 +71,20 @@ export function GameScreen({
     }
   }, [incoming, g.players])
 
-  // 轮到自己时提醒（标签页在后台时也能看到标题变化）
+  useGameSounds(g, state.me.id)
+  const muted = useMuted()
+
+  // 轮到自己时弹出提示并响一声（标签页在后台时也能看到标题变化）
   const myTurn = alive && cur.id === me!.id && !over
+  const turnKey = myTurn && g.phase === 'roll' && !g.again ? (g.log.at(-1)?.id ?? 0) : 0
+  const [bannerDone, setBannerDone] = useState(0)
+  const banner = turnKey !== bannerDone ? turnKey : 0
+  useEffect(() => {
+    if (!turnKey) return
+    sfx.turn()
+    const t = setTimeout(() => setBannerDone(turnKey), 1600)
+    return () => clearTimeout(t)
+  }, [turnKey])
   useEffect(() => {
     const base = '大富翁'
     document.title = myTurn ? `轮到你了 - ${base}` : base
@@ -84,6 +115,15 @@ export function GameScreen({
         <span className="font-display text-lg">房间 {state.room.code}</span>
         <ConnBadge status={status} className="text-paper/80" />
         <div className="ml-auto flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-paper hover:bg-white/10 hover:text-paper"
+            aria-label={muted ? '打开声音' : '静音'}
+            onClick={() => setMuted(!muted)}
+          >
+            {muted ? <VolumeX /> : <Volume2 />}
+          </Button>
           <Button variant="ghost" size="icon-sm" className="text-paper hover:bg-white/10 hover:text-paper" asChild>
             <a href={`?overview=${state.room.code}`} target="_blank" rel="noreferrer" aria-label="大屏">
               <Tv />
@@ -187,6 +227,13 @@ export function GameScreen({
         </aside>
       </div>
 
+      {banner > 0 && (
+        <div key={banner} className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center">
+          <div className="animate-banner rounded-2xl bg-white/95 px-10 py-5 shadow-[0_20px_60px_-10px_rgb(0_0_0/0.5)]">
+            <div className="font-display text-4xl text-brick">轮到你了</div>
+          </div>
+        </div>
+      )}
       <TileDialog game={g} tile={tile} me={me} send={send} onClose={() => setTile(null)} />
       {me && <TradeDialog game={g} me={me} target={tradeWith} send={send} onClose={() => setTradeWith(null)} />}
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />

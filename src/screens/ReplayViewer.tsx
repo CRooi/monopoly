@@ -39,7 +39,7 @@ export function ReplayViewer() {
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    document.title = replay ? `回放 · 房间 ${replay.game.code} 第 ${replay.game.round} 局 - 大富翁` : '回放查看器 - 大富翁'
+    document.title = replay ? `回放 房间 ${replay.game.code} 第 ${replay.game.round} 局 - 大富翁` : '回放查看器 - 大富翁'
   }, [replay])
 
   const open = useCallback(async (file: File | undefined) => {

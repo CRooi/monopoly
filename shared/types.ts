@@ -23,8 +23,8 @@ export type Tile =
   | { kind: 'chance'; name: string }
   | { kind: 'chest'; name: string }
   | { kind: 'tax'; name: string; amount: number }
-  /** 国家：iso 为国旗代码，rent 依次为空地、1~4 栋房子、酒店的租金 */
-  | { kind: 'country'; name: string; iso: string; group: ColorGroup; price: number; house: number; rent: [number, number, number, number, number, number] }
+  /** 地产：国家用 iso 国旗代码，城市用 badge 简称；rent 依次为空地、1~4 栋房子、酒店的租金 */
+  | { kind: 'country'; name: string; iso?: string; badge?: string; group: ColorGroup; price: number; house: number; rent: [number, number, number, number, number, number] }
   | { kind: 'airline'; name: string; price: number }
   | { kind: 'utility'; name: string; price: number }
 
@@ -86,12 +86,102 @@ export const BOARD: Tile[] = [
 export const JAIL_POS = 10
 export const GO_SALARY = 200
 export const BAIL = 50
+/** 第一次摇骰子摇多久 */
+export const SHAKE_MS = 3000
+/** 摇的过程中再点一次加多久，每过这么久才能再加一次 */
+export const SHAKE_EXTEND_MS = 1000
 /** 航线：拥有 1~4 条时的租金 */
 export const AIRLINE_RENT = [25, 50, 100, 200]
 /** 公用事业：拥有 1、2 家时按骰子点数的倍数收费 */
 export const UTILITY_MULT = [4, 10]
 /** 抵押借款的利息（赎回时多付） */
 export const MORTGAGE_INTEREST = 0.1
+
+// ---------- 主题 ----------
+
+export type ThemeId = 'world' | 'china'
+
+export interface Theme {
+  id: ThemeId
+  name: string
+  /** 地产叫什么：国家 / 城市 */
+  land: string
+  /** 交通线路叫什么：航线 / 高铁 */
+  transit: string
+  /** 换掉的格子名字 */
+  names: Record<number, { name: string; badge?: string }>
+  /** 火锅辣度：停在这块别人的地上要摇辣度，租金按辣度翻倍 */
+  spicy?: number
+}
+
+/** 重庆火锅的辣度，按概率摇出 */
+export const SPICE_LEVELS = [
+  { level: '微辣', mult: 1, weight: 3 },
+  { level: '中辣', mult: 2, weight: 2 },
+  { level: '特辣', mult: 3, weight: 1 },
+]
+
+export const THEMES: Record<ThemeId, Theme> = {
+  world: { id: 'world', name: '世界各国', land: '国家', transit: '航线', names: {} },
+  china: {
+    id: 'china',
+    name: '中国城市',
+    land: '城市',
+    transit: '高铁',
+    spicy: 39,
+    names: {
+      1: { name: '拉萨', badge: '藏' },
+      3: { name: '西宁', badge: '青' },
+      5: { name: '京沪高铁' },
+      6: { name: '乌鲁木齐', badge: '新' },
+      8: { name: '兰州', badge: '甘' },
+      9: { name: '贵阳', badge: '黔' },
+      11: { name: '南宁', badge: '桂' },
+      12: { name: '国家电网' },
+      13: { name: '昆明', badge: '滇' },
+      14: { name: '哈尔滨', badge: '黑' },
+      15: { name: '京广高铁' },
+      16: { name: '沈阳', badge: '辽' },
+      18: { name: '郑州', badge: '豫' },
+      19: { name: '长沙', badge: '湘' },
+      21: { name: '西安', badge: '陕' },
+      23: { name: '武汉', badge: '鄂' },
+      24: { name: '南京', badge: '苏' },
+      25: { name: '沪昆高铁' },
+      26: { name: '天津', badge: '津' },
+      27: { name: '苏州', badge: '苏' },
+      28: { name: '自来水厂' },
+      29: { name: '杭州', badge: '浙' },
+      31: { name: '广州', badge: '粤' },
+      32: { name: '深圳', badge: '粤' },
+      34: { name: '北京', badge: '京' },
+      35: { name: '成渝高铁' },
+      37: { name: '上海', badge: '沪' },
+      39: { name: '重庆', badge: '渝' },
+    },
+  },
+}
+
+export const THEME_OPTIONS: ThemeId[] = ['world', 'china']
+
+export const themeOf = (id: ThemeId | undefined) => THEMES[id ?? 'world'] ?? THEMES.world
+
+const boards = new Map<ThemeId, Tile[]>()
+
+/** 某个主题的棋盘：格子的种类、价格都一样，只换名字和图标 */
+export function boardFor(id: ThemeId | undefined): Tile[] {
+  const theme = themeOf(id)
+  let b = boards.get(theme.id)
+  if (!b) {
+    b = BOARD.map((t, i) => {
+      const n = theme.names[i]
+      if (!n) return t
+      return t.kind === 'country' ? { ...t, name: n.name, badge: n.badge, iso: undefined } : { ...t, name: n.name }
+    })
+    boards.set(theme.id, b)
+  }
+  return b
+}
 
 export const isBuyable = (t: Tile): t is BuyableTile => t.kind === 'country' || t.kind === 'airline' || t.kind === 'utility'
 
@@ -149,9 +239,11 @@ export interface RoomConfig {
   /** 落在免费停车时领走奖池（税款与罚款都进奖池） */
   parkingPot: boolean
   allowSpectators: boolean
+  theme: ThemeId
 }
 
 export const DEFAULT_CONFIG: RoomConfig = {
+  theme: 'world',
   startCash: 1500,
   maxRounds: 0,
   parkingPot: false,
@@ -164,10 +256,14 @@ export const ROUND_OPTIONS = [0, 10, 20, 30, 50]
 // ---------- 游戏状态 ----------
 
 export type Phase =
-  /** 等待当前玩家掷骰子 */
+  /** 等待当前玩家掷骰子（包括骰子正在摇） */
   | 'roll'
+  /** 掷出了点数，玩家自己一步一步走 */
+  | 'move'
   /** 停在无主的地上，决定买不买 */
   | 'buy'
+  /** 停在机会或命运上，等玩家自己抽卡 */
+  | 'draw'
   /** 欠款付不起，需要卖房、抵押凑钱或宣告破产 */
   | 'debt'
   /** 本回合的移动结束，可以继续经营，然后结束回合 */
@@ -267,6 +363,16 @@ export interface GameView {
   again: boolean
   doubles: number
   lastRoll: Roll | null
+  /** 骰子正在摇，还要摇多少毫秒；没在摇为 null */
+  shakeMs: number | null
+  /** 摇骰子时一共点了多少下，每点一下大家都能看到飘字 */
+  shakeTaps: number
+  /** 开局时选的主题 */
+  theme: ThemeId
+  /** 刚摇出的火锅辣度 */
+  spice: { id: number; level: string; mult: number; player: string } | null
+  /** 掷出点数后还要自己走的步数 */
+  stepsLeft: number
   card: DrawnCard | null
   trades: Trade[]
   pot: number
@@ -313,9 +419,15 @@ export type ClientMessage =
   | { type: 'updateConfig'; config: RoomConfig }
   | { type: 'start' }
   | { type: 'abort' }
+  /** 直接掷出点数（不摇），测试和机器人用 */
   | { type: 'roll' }
+  /** 摇骰子：第一次摇 3 秒，摇的过程中再点每秒最多加 1 秒 */
+  | { type: 'shake' }
+  /** 掷出点数后自己走一步 */
+  | { type: 'step' }
   | { type: 'buy' }
   | { type: 'pass' }
+  | { type: 'drawCard' }
   | { type: 'endTurn' }
   | { type: 'payBail' }
   | { type: 'useJailCard' }

@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { ArrowLeftRight, Crown, KeyRound, Lock, UserX, WifiOff } from 'lucide-react'
-import { BOARD, type ClientMessage, type GamePlayer, type GameView, type StateView } from '@shared/types'
+import { boardFor, type ClientMessage, type GamePlayer, type GameView, type StateView } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
-import { Flag } from '@/components/art/Flag'
+import { TileMark } from '@/components/art/TileMark'
 import { Buildings } from '@/components/art/icons'
+import { CashTicker } from '@/components/game/CashTicker'
 import { Button } from '@/components/ui/button'
 import { money, ownedTiles, tileSwatch, worth } from '@/lib/rules'
 import { cn } from '@/lib/utils'
@@ -62,16 +63,16 @@ export function PlayersPanel({
                   )}
                 </div>
               </div>
-              {!p.bankrupt && <span className="text-lg font-semibold tabular-nums text-cash">{money(p.cash)}</span>}
+              {!p.bankrupt && <CashTicker value={p.cash} className="text-lg font-semibold text-cash" />}
             </div>
             {tiles.length > 0 && (
               <div className="flex flex-wrap gap-0.5">
                 {tiles.map((t) => (
                   <span
                     key={t}
-                    title={BOARD[t]!.name}
+                    title={boardFor(g.theme)[t]!.name}
                     className={cn('h-2.5 w-3.5 rounded-[2px] border border-ink/40', g.owners[t]!.mortgaged && 'opacity-35')}
-                    style={{ background: tileSwatch(BOARD[t]!) }}
+                    style={{ background: tileSwatch(boardFor(g.theme)[t]!) }}
                   />
                 ))}
               </div>
@@ -103,19 +104,19 @@ export function AssetsPanel({ game, me, send, onTile }: { game: GameView; me: Ga
     <div className="space-y-3">
       <div className="panel-flat flex items-center justify-between px-3 py-2">
         <span className="text-sm text-ink/70">现金</span>
-        <span className="text-lg font-semibold tabular-nums text-cash">{money(me.cash)}</span>
+        <CashTicker value={me.cash} className="text-lg font-semibold text-cash" />
         <span className="text-sm text-ink/70">总资产</span>
         <span className="text-lg font-semibold tabular-nums">{money(worth(game, me))}</span>
       </div>
       {tiles.length === 0 && <div className="py-8 text-center text-sm text-paper/80">还没有地产</div>}
       {tiles.map((i) => {
-        const t = BOARD[i]!
+        const t = boardFor(game.theme)[i]!
         const own = game.owners[i]!
         return (
           <div key={i} className={cn('panel-flat overflow-hidden', own.mortgaged && 'bg-[#efe7d6]')}>
             <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left" onClick={() => onTile(i)}>
               <span className="h-6 w-1.5 shrink-0 rounded-sm" style={{ background: tileSwatch(t) }} />
-              {t.kind === 'country' && <Flag iso={t.iso} className="w-6" />}
+              <TileMark tile={t} size={22} />
               <span className="font-medium">{t.name}</span>
               {own.houses > 0 && <Buildings houses={own.houses} className="h-3.5" />}
               {own.mortgaged && <span className="ml-auto rounded bg-ink px-1.5 text-xs text-paper">抵押中</span>}

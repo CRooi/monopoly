@@ -163,11 +163,11 @@ export function ReplayPlayer({
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3 text-sm text-paper">
         <span className="font-display text-xl">
-          房间 {game.code} · 第 {game.round} 局
+          房间 {game.code} 第 {game.round} 局
         </span>
         <span className={cn('rounded-full px-2 py-0.5 text-xs', statusCls)}>{statusLabel}</span>
         <span className="text-paper/75">
-          {fmtDateTime(game.startedAt)} 开局 · {duration(game)} · {events.length} 个事件
+          {fmtDateTime(game.startedAt)} 开局，{duration(game)}，{events.length} 个事件
         </span>
         {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
       </div>

@@ -59,7 +59,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
           <Logo className="size-10" />
         )}
         <h1 className="text-title font-display text-2xl">
-          {view.kind === 'list' ? '管理后台' : view.kind === 'live' ? `实时观看 · 房间 ${view.code}` : '对局回放'}
+          {view.kind === 'list' ? '管理后台' : view.kind === 'live' ? `实时观看 房间 ${view.code}` : '对局回放'}
         </h1>
         <div className="ml-auto flex items-center gap-2">
           {view.kind === 'list' && (
@@ -128,8 +128,8 @@ function RoomList({ rooms, fetchedAt, onOpen }: { rooms: AdminRoom[]; fetchedAt:
             </span>
           </div>
           <div className="text-sm text-ink/70">
-            房主 {r.host} · 玩家 {r.players}（在线 {r.online}）
-            {r.spectators > 0 && ` · 观战 ${r.spectators}`}
+            房主 {r.host}，玩家 {r.players}（在线 {r.online}）
+            {r.spectators > 0 && `，观战 ${r.spectators}`}
           </div>
           <IdleInfo room={r} now={fetchedAt} />
           <Button variant={r.inGame ? 'red' : 'paper'} size="sm" className="mt-1" onClick={() => onOpen(r.code)}>
@@ -148,7 +148,7 @@ function IdleInfo({ room, now }: { room: AdminRoom; now: number }) {
   const mins = (ms: number) => (ms < 60_000 ? '不到 1 分钟' : `${Math.floor(ms / 60_000)} 分钟`)
   return (
     <div className={cn('text-xs', left < 5 * 60_000 ? 'text-brick' : 'text-ink/60')}>
-      最后操作 {idle < 60_000 ? '刚刚' : `${mins(idle)}前`} · {mins(left)}后无操作将自动解散
+      最后操作 {idle < 60_000 ? '刚刚' : `${mins(idle)}前`}，{mins(left)}后无操作将自动解散
     </div>
   )
 }
@@ -182,7 +182,7 @@ function GameList({ games, onOpen, onError }: { games: AdminGame[]; onOpen: (id:
                 <span className="text-ink/70">{fmtDateTime(g.startedAt)} 开局</span>
                 <span className="text-ink/70">{duration(g)}</span>
                 <span className="min-w-0 truncate text-ink/70">
-                  {g.players.join('、')} · {g.events} 个事件
+                  {g.players.join('、')}，{g.events} 个事件
                 </span>
                 <div className="ml-auto flex gap-2">
                   <Button variant="ghost" size="sm" onClick={() => downloadReplay(g.id).catch(onError)} aria-label="下载回放">
@@ -216,7 +216,7 @@ function LiveView({ code, token, onAuthFail }: { code: string; token: string; on
         <ConnBadge status={status} className="text-xs text-paper/80" />
       </div>
       <div className="min-h-0 flex-1">
-        <WatchView state={state} />
+        <WatchView state={state} live />
       </div>
     </div>
   )

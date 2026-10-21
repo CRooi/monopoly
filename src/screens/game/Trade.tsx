@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { ArrowLeftRight, Check, KeyRound, X } from 'lucide-react'
-import { BOARD, groupTiles, type ClientMessage, type GamePlayer, type GameView, type Trade, type TradeSide } from '@shared/types'
+import { boardFor, groupTiles, type ClientMessage, type GamePlayer, type GameView, type Trade, type TradeSide } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
-import { Flag } from '@/components/art/Flag'
+import { TileMark } from '@/components/art/TileMark'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -14,13 +14,13 @@ const EMPTY: TradeSide = { cash: 0, tiles: [], jailCards: 0 }
 /** 同色还有房子的地不能交易 */
 function tradable(g: GameView, id: string) {
   return ownedTiles(g, id).filter((i) => {
-    const t = BOARD[i]!
+    const t = boardFor(g.theme)[i]!
     return t.kind !== 'country' || groupTiles(t.group).every((j) => (g.owners[j]?.houses ?? 0) === 0)
   })
 }
 
 function TileChip({ g, tile, on, onClick }: { g: GameView; tile: number; on?: boolean; onClick?: () => void }) {
-  const t = BOARD[tile]!
+  const t = boardFor(g.theme)[tile]!
   return (
     <button
       type="button"
@@ -33,7 +33,7 @@ function TileChip({ g, tile, on, onClick }: { g: GameView; tile: number; on?: bo
       )}
     >
       <span className="h-3 w-1 rounded-sm" style={{ background: tileSwatch(t) }} />
-      {t.kind === 'country' && <Flag iso={t.iso} className="w-4" />}
+      {t.kind === 'country' && <TileMark tile={t} size={16} />}
       {t.name}
     </button>
   )

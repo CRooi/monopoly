@@ -7,8 +7,8 @@ const FLAGS: Record<string, FlagComponent> = {
   AR, AU, BR, CA, CN, DE, EG, ES, FR, GB, IN, IT, JP, KR, MX, RU, SG, TH, TR, US, VN, ZA,
 }
 
-export function Flag({ iso, className }: { iso: string; className?: string }) {
+export function Flag({ iso, className, style }: { iso: string; className?: string; style?: React.CSSProperties }) {
   const F = FLAGS[iso]
   if (!F) return null
-  return <F className={cn('block aspect-[3/2] rounded-[2px] shadow-[0_0_0_1px_rgb(0_0_0/0.25)]', className)} />
+  return <F className={cn('block aspect-[3/2] rounded-[2px] shadow-[0_0_0_1px_rgb(0_0_0/0.25)]', className)} style={style} />
 }

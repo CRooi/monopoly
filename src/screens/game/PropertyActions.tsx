@@ -1,5 +1,5 @@
 import { Hammer, HandCoins, Landmark, Undo2 } from 'lucide-react'
-import { BOARD, mortgageValue, unmortgageCost, type BuyableTile, type ClientMessage, type GamePlayer, type GameView } from '@shared/types'
+import { boardFor, mortgageValue, unmortgageCost, type BuyableTile, type ClientMessage, type GamePlayer, type GameView } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { canBuild, canMortgage, canSell, canUnmortgage, money } from '@/lib/rules'
 
@@ -7,7 +7,7 @@ import { canBuild, canMortgage, canSell, canUnmortgage, money } from '@/lib/rule
 export function PropertyActions({ game, me, tile, send }: { game: GameView; me: GamePlayer; tile: number; send: (m: ClientMessage) => void }) {
   const cur = game.players[game.turn]
   const myTurn = cur?.id === me.id && !me.bankrupt
-  const t = BOARD[tile] as BuyableTile
+  const t = boardFor(game.theme)[tile] as BuyableTile
   const own = game.owners[tile]
   if (!own || own.owner !== me.id || !myTurn) return null
   // 盖房和赎回要在没有待决定的事的时候，卖房和抵押欠款时也可以

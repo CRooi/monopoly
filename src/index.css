@@ -167,6 +167,46 @@
   0%, 100% { transform: rotateY(0deg); }
   50% { transform: rotateY(180deg); }
 }
+@keyframes float-up {
+  0% { transform: translateY(0); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateY(-28px); opacity: 0; }
+}
+@keyframes flip-in {
+  from { transform: perspective(700px) rotateY(90deg) scale(0.9); opacity: 0; }
+  to { transform: perspective(700px) rotateY(0) scale(1); opacity: 1; }
+}
+@keyframes banner {
+  0% { transform: scale(0.6); opacity: 0; }
+  15% { transform: scale(1.05); opacity: 1; }
+  25% { transform: scale(1); }
+  80% { opacity: 1; }
+  100% { transform: scale(1); opacity: 0; }
+}
+@keyframes shake {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  20% { transform: translate(-3px, -2px) rotate(-8deg); }
+  40% { transform: translate(3px, 1px) rotate(6deg); }
+  60% { transform: translate(-2px, 2px) rotate(-4deg); }
+  80% { transform: translate(2px, -1px) rotate(5deg); }
+}
+@keyframes wiggle {
+  0%, 85%, 100% { transform: rotate(0); }
+  89% { transform: rotate(-2deg); }
+  93% { transform: rotate(2deg); }
+  97% { transform: rotate(-1deg); }
+}
+.animate-shake { animation: shake 0.25s linear infinite; }
+.animate-wiggle { animation: wiggle 2.4s ease-in-out infinite; }
+@keyframes tap-float {
+  0% { transform: translate(-50%, 0) scale(0.7); opacity: 0; }
+  12% { transform: translate(-50%, -8px) scale(1.1); opacity: 1; }
+  100% { transform: translate(-50%, -64px) scale(1); opacity: 0; }
+}
+.animate-tap-float { animation: tap-float 1.3s ease-out both; }
+.animate-float-up { animation: float-up 1.8s ease-out both; }
+.animate-flip-in { animation: flip-in 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.animate-banner { animation: banner 1.6s ease-out both; }
 .animate-float { animation: float-y 4s ease-in-out infinite; }
 .animate-rise { animation: rise 0.45s ease-out both; }
 .animate-pop { animation: pop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }

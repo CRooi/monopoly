@@ -12,7 +12,29 @@ import { GameError, ROOM_IDLE_MS, Room, genCode, idleText } from './room'
 const BOOT_ID = crypto.randomUUID()
 
 const rooms = new Map<string, Room>()
-for (const d of loadRooms()) rooms.set(d.code, new Room(d))
+
+/**
+ * 登记房间。骰子摇完由房间自己的计时器出点数，不是玩家消息触发的，
+ * 这里给它补上和玩家操作一样的收尾：记录对局事件、保存、推送
+ */
+function track(room: Room) {
+  room.runAsync = (actor, msg, fn) => {
+    try {
+      const before = snapshotBefore(room)
+      fn()
+      recordAction(room, actor, msg, before)
+      room.touch()
+      saveRoom(room.d)
+      broadcast(room)
+    } catch (e) {
+      console.error(`房间 ${room.d.code} 计时操作失败`, e)
+    }
+  }
+  rooms.set(room.d.code, room)
+  return room
+}
+
+for (const d of loadRooms()) track(new Room(d))
 if (rooms.size) console.log(`已恢复 ${rooms.size} 个房间`)
 
 /** 大屏和后台的只读连接用这个前缀，不对应任何玩家 */
@@ -58,6 +80,7 @@ function pushAll(room: Room) {
 
 /** 关闭房间：通知所有连接并删除 */
 function closeRoom(code: string, reason: string) {
+  rooms.get(code)?.dispose()
   rooms.delete(code)
   deleteRoom(code)
   for (const [, s] of sockets.get(code) ?? []) for (const w of s) { send(w, { type: 'kicked', reason }); w.close() }
@@ -95,7 +118,7 @@ function wrap(fn: (req: express.Request, res: express.Response) => void) {
 app.post('/api/rooms', wrap((req, res) => {
   const code = genCode((c) => rooms.has(c))
   const { room, user } = Room.create(code, req.body?.config, req.body?.name, req.body?.avatar)
-  rooms.set(code, room)
+  track(room)
   room.touch()
   saveRoom(room.d)
   res.json({ code, token: user.token })

@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { CircleParking, Droplets, Gem, Plane, Receipt, Siren, Zap } from 'lucide-react'
-import { BOARD, GROUP_COLOR, JAIL_POS, type GamePlayer, type GameView, type Ownership, type Tile } from '@shared/types'
+import { CircleParking, Droplets, Gem, Plane, Receipt, Siren, TrainFront, Zap } from 'lucide-react'
+import { BOARD, GROUP_COLOR, boardFor, JAIL_POS, type GamePlayer, type GameView, type Ownership, type Tile } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
+import { CityBadge } from '@/components/art/CityBadge'
 import { Flag } from '@/components/art/Flag'
 import { Buildings, ChanceMark, Chest, GoArrow, JailBars } from '@/components/art/icons'
+import { DeltaPop } from '@/components/game/CashTicker'
+import { sfx } from '@/lib/sound'
 import { cn } from '@/lib/utils'
+
+/** 棋子走一格的动画时长 */
+const STEP_MS = 200
 
 /** 角上格子的宽度（普通格子为 1） */
 const CORNER = 1.55
@@ -121,7 +127,7 @@ function TileFace({ tile, side, pot }: { tile: Tile; side: Side; pot: number }) 
     case 'airline':
       return wrap(
         <>
-          {icon(<Plane className="text-[#1c63c9]" />)}
+          {icon(tile.name.includes('高铁') ? <TrainFront className="text-brick" /> : <Plane className="text-[#1c63c9]" />)}
           <div className="flex flex-col items-center gap-[0.3cqw]">
             {label}
             {price(tile.price)}
@@ -141,7 +147,11 @@ function TileFace({ tile, side, pot }: { tile: Tile; side: Side; pot: number }) 
     case 'country':
       return wrap(
         <>
-          <Flag iso={tile.iso} className={horizontal ? 'w-[3.6cqw]' : 'w-[3.8cqw]'} />
+          {tile.iso ? (
+            <Flag iso={tile.iso} className={horizontal ? 'w-[3.6cqw]' : 'w-[3.8cqw]'} />
+          ) : (
+            <CityBadge badge={tile.badge ?? tile.name[0]!} color={GROUP_COLOR[tile.group]} className="w-[3.4cqw] text-[1.9cqw]" />
+          )}
           <div className="flex flex-col items-center gap-[0.3cqw]">
             {label}
             {price(tile.price)}
@@ -153,6 +163,7 @@ function TileFace({ tile, side, pot }: { tile: Tile; side: Side; pot: number }) 
 
 function TileCell({
   index,
+  tile,
   own,
   ownerColor,
   pot,
@@ -160,13 +171,13 @@ function TileCell({
   onClick,
 }: {
   index: number
+  tile: Tile
   own?: Ownership
   ownerColor?: string
   pot: number
   highlight: boolean
   onClick?: (i: number) => void
 }) {
-  const tile = BOARD[index]!
   const { row, col, side } = gridOf(index)
   const bar = tile.kind === 'country' && side !== 'corner'
   return (
@@ -223,7 +234,7 @@ function TileCell({
 }
 
 /** 棋子逐格走到目标位置；进监狱等跳跃式移动直接到位 */
-function useAnimatedPositions(players: GamePlayer[]) {
+function useAnimatedPositions(players: GamePlayer[], sound: boolean) {
   const initial = () => Object.fromEntries(players.map((p) => [p.id, p.pos]))
   const [shown, setShown] = useState<Record<string, number>>(initial)
   const cur = useRef<Record<string, number>>(shown)
@@ -236,21 +247,31 @@ function useAnimatedPositions(players: GamePlayer[]) {
       targets[p.id] = { pos: p.pos, jump: p.inJail && prevJail.current[p.id] === false }
       prevJail.current[p.id] = p.inJail
     }
+    const ahead = (id: string) => (targets[id]!.pos - (cur.current[id] ?? targets[id]!.pos) + BOARD.length) % BOARD.length
+    // 掷骰的步数按正常速度走；卡片带来的长距离前进走快一些
+    const far = Object.keys(targets).some((id) => !targets[id]!.jump && ahead(id) > 12)
+    const stepMs = far ? 70 : STEP_MS
     /** 走一步，返回是否还有棋子没到位 */
     const tick = () => {
       const next = { ...cur.current }
       let moving = false
+      let stepped = false
       for (const [id, t] of Object.entries(targets)) {
         const from = next[id] ?? t.pos
         if (from === t.pos) {
           next[id] = t.pos
           continue
         }
-        const ahead = (t.pos - from + BOARD.length) % BOARD.length
-        // 往前走得不远就一步一步走，否则（后退、进监狱）直接到位
-        next[id] = t.jump || ahead > 12 ? t.pos : (from + 1) % BOARD.length
+        // 进监狱直接到位；后退几格（机会卡）也直接到位，其余一格一格往前走
+        const back = (from - t.pos + BOARD.length) % BOARD.length <= 3
+        if (t.jump || back) next[id] = t.pos
+        else {
+          next[id] = (from + 1) % BOARD.length
+          stepped = true
+        }
         if (next[id] !== t.pos) moving = true
       }
+      if (stepped && sound && !far) sfx.step()
       cur.current = next
       setShown(next)
       return moving
@@ -258,7 +279,7 @@ function useAnimatedPositions(players: GamePlayer[]) {
     if (!tick()) return
     const timer = setInterval(() => {
       if (!tick()) clearInterval(timer)
-    }, 150)
+    }, stepMs)
     return () => clearInterval(timer)
   }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -271,8 +292,11 @@ export function Board({
   highlight,
   children,
   className,
+  quiet,
 }: {
   game: GameView
+  /** 不播放走棋的声音（回放时） */
+  quiet?: boolean
   onTileClick?: (i: number) => void
   /** 需要突出显示的格子 */
   highlight?: number | null
@@ -280,7 +304,7 @@ export function Board({
   children?: ReactNode
   className?: string
 }) {
-  const shown = useAnimatedPositions(game.players)
+  const shown = useAnimatedPositions(game.players, !quiet)
   const colorOf = Object.fromEntries(game.players.map((p) => [p.id, p.color]))
   const current = game.players[game.turn]
 
@@ -302,10 +326,11 @@ export function Board({
           gridTemplateRows: `${CORNER}fr repeat(9, 1fr) ${CORNER}fr`,
         }}
       >
-        {BOARD.map((_, i) => (
+        {boardFor(game.theme).map((tile, i) => (
           <TileCell
             key={i}
             index={i}
+            tile={tile}
             own={game.owners[i]}
             ownerColor={game.owners[i] ? colorOf[game.owners[i]!.owner] : undefined}
             pot={game.pot}
@@ -343,7 +368,7 @@ export function Board({
           return (
             <div
               key={p.id}
-              className="pointer-events-none absolute transition-[left,top] duration-150 ease-out"
+              className="pointer-events-none absolute transition-[left,top] duration-200 ease-out"
               style={{
                 left: `calc(${c.x}% + ${dx}cqw)`,
                 top: `calc(${c.y}% + ${dy}cqw)`,
@@ -357,6 +382,7 @@ export function Board({
                 className={cn('-translate-x-1/2 -translate-y-1/2 border-[0.3cqw] border-white shadow-[0_0.3cqw_0.8cqw_rgb(0_0_0/0.35)]', active && 'animate-pulse-ring')}
                 style={{ width: `${size}cqw`, height: `${size}cqw` }}
               />
+              <DeltaPop value={p.cash} className="-top-[6.5cqw] text-[1.9cqw]" />
             </div>
           )
         })

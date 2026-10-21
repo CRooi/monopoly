@@ -1,7 +1,13 @@
 import {
   AIRLINE_RENT,
   BAIL,
+  SHAKE_EXTEND_MS,
+  SHAKE_MS,
   BOARD,
+  SPICE_LEVELS,
+  THEME_OPTIONS,
+  boardFor,
+  themeOf,
   DEFAULT_CONFIG,
   GO_SALARY,
   JAIL_POS,
@@ -57,7 +63,11 @@ export interface User {
 }
 
 /** 对局的完整状态：比发给客户端的视图多出牌堆顺序和内部计数 */
-export interface GameState extends GameView {
+export interface GameState extends Omit<GameView, 'shakeMs'> {
+  /** 骰子摇到什么时候停（时间戳），没在摇为 null */
+  shakeUntil: number | null
+  /** 上一次延长摇骰的时间，每过 SHAKE_EXTEND_MS 才能再延长一次 */
+  shakeExtendedAt: number
   decks: { chance: number[]; chest: number[] }
   /** 欠款还清后要接着做的事：第三次没掷出双数时先交保释金再走 */
   afterDebt: { move: number } | null
@@ -109,11 +119,11 @@ export function validateConfig(c: Partial<RoomConfig> | undefined): RoomConfig {
     maxRounds: ROUND_OPTIONS.includes(Number(v.maxRounds)) ? Number(v.maxRounds) : DEFAULT_CONFIG.maxRounds,
     parkingPot: !!v.parkingPot,
     allowSpectators: !!v.allowSpectators,
+    theme: THEME_OPTIONS.includes(v.theme) ? v.theme : DEFAULT_CONFIG.theme,
   }
 }
 
 const money = (n: number) => `$${n}`
-const tileName = (i: number) => BOARD[i]!.name
 
 // ---------------- 机会与命运卡 ----------------
 
@@ -126,12 +136,12 @@ const JAIL_CARD_TEXT = '获得一张出狱卡，可以留着以后用'
 
 const CHANCE: Card[] = [
   { text: '前进到起点，领取 $200', act: (r) => r.moveTo(0) },
-  { text: '前进到中国，经过起点领取 $200', act: (r) => r.moveTo(39) },
-  { text: '前进到意大利，经过起点领取 $200', act: (r) => r.moveTo(21) },
-  { text: '前进到墨西哥，经过起点领取 $200', act: (r) => r.moveTo(11) },
-  { text: '前往太平洋航线，经过起点领取 $200', act: (r) => r.moveTo(5) },
-  { text: '前进到最近的航线，有主人时付双倍租金', act: (r) => r.moveToNearest('airline') },
-  { text: '前进到最近的航线，有主人时付双倍租金', act: (r) => r.moveToNearest('airline') },
+  { text: '前进到{39}，经过起点领取 $200', act: (r) => r.moveTo(39) },
+  { text: '前进到{21}，经过起点领取 $200', act: (r) => r.moveTo(21) },
+  { text: '前进到{11}，经过起点领取 $200', act: (r) => r.moveTo(11) },
+  { text: '前往{5}，经过起点领取 $200', act: (r) => r.moveTo(5) },
+  { text: '前进到最近的{transit}，有主人时付双倍租金', act: (r) => r.moveToNearest('airline') },
+  { text: '前进到最近的{transit}，有主人时付双倍租金', act: (r) => r.moveToNearest('airline') },
   { text: '前进到最近的公用事业，有主人时按骰子点数付 10 倍', act: (r) => r.moveToNearest('utility') },
   { text: '银行分红，领取 $50', act: (r) => r.receive(50) },
   { text: JAIL_CARD_TEXT, act: (r) => r.gainJailCard() },
@@ -170,8 +180,43 @@ const JAIL_CARD = { chance: CHANCE.findIndex((c) => c.text === JAIL_CARD_TEXT), 
 export class Room {
   /** 随机数来源，测试时可替换 */
   rng: () => number = Math.random
+  /**
+   * 计时器到点后执行的操作（骰子摇完）不是由玩家消息触发的，
+   * 由传输层包一层：记录对局事件、保存、推送；默认直接执行（测试用）
+   */
+  runAsync: (actor: string, msg: ClientMessage, fn: () => void) => void = (_a, _m, fn) => fn()
+  private shakeTimer: ReturnType<typeof setTimeout> | null = null
 
-  constructor(public d: RoomData) {}
+  constructor(public d: RoomData) {
+    // 兼容加主题之前保存的房间
+    d.config.theme ??= 'world'
+    // 重启前骰子正在摇：接着计时，到点（或已经过点）就出点数
+    if (d.game?.shakeUntil) this.armShake()
+  }
+
+  /** 当前对局的主题；开局前按房间设置 */
+  get theme() {
+    return themeOf(this.d.game?.theme ?? this.d.config.theme)
+  }
+
+  get board() {
+    return boardFor(this.theme.id)
+  }
+
+  tileName(i: number) {
+    return this.board[i]!.name
+  }
+
+  /** 卡片文字里的 {格子号} 和 {transit} 换成当前主题的名字 */
+  private fill(text: string) {
+    return text.replace(/\{(\d+)\}/g, (_, i) => this.tileName(Number(i))).replace('{transit}', this.theme.transit)
+  }
+
+  /** 房间关闭时清掉计时器 */
+  dispose() {
+    if (this.shakeTimer) clearTimeout(this.shakeTimer)
+    this.shakeTimer = null
+  }
 
   static create(code: string, config: Partial<RoomConfig> | undefined, hostName: unknown, avatar?: unknown): { room: Room; user: User } {
     const cfg = validateConfig(config)
@@ -332,17 +377,33 @@ export class Room {
     if (!mine) fail('还没轮到你')
     switch (msg.type) {
       case 'roll':
+        if (g!.shakeUntil) fail('骰子正在摇')
         this.roll()
+        break
+      case 'shake':
+        this.shake()
+        break
+      case 'step':
+        this.step()
         break
       case 'buy':
         this.buy()
         break
       case 'pass':
         if (g!.phase !== 'buy') fail('现在不能这样做')
-        this.log(`${me!.name} 放弃购买 ${tileName(me!.pos)}`, me!.id)
+        this.log(`${me!.name} 放弃购买 ${this.tileName(me!.pos)}`, me!.id)
         g!.phase = 'end'
         this.afterMove()
         break
+      case 'drawCard': {
+        if (g!.phase !== 'draw') fail('现在不能抽卡')
+        const t = this.board[me!.pos]!
+        if (t.kind !== 'chance' && t.kind !== 'chest') fail('这里没有卡可抽')
+        g!.phase = 'end'
+        this.drawCard(t.kind as 'chance' | 'chest')
+        this.afterMove()
+        break
+      }
       case 'endTurn':
         if (g!.phase !== 'end') fail(g!.phase === 'roll' ? '请先掷骰子' : '现在不能结束回合')
         this.nextTurn()
@@ -416,6 +477,12 @@ export class Room {
       again: false,
       doubles: 0,
       lastRoll: null,
+      theme: this.d.config.theme,
+      spice: null,
+      shakeUntil: null,
+      shakeExtendedAt: 0,
+      shakeTaps: 0,
+      stepsLeft: 0,
       card: null,
       trades: [],
       pot: 0,
@@ -457,13 +524,14 @@ export class Room {
 
   private roll() {
     const g = this.g
-    if (g.phase !== 'roll') fail(g.phase === 'buy' ? '请先决定是否购买' : g.phase === 'debt' ? '请先还清欠款' : '这回合已经掷过了')
+    if (g.phase !== 'roll') fail(g.phase === 'buy' ? '请先决定是否购买' : g.phase === 'draw' ? '请先抽卡' : g.phase === 'debt' ? '请先还清欠款' : '这回合已经掷过了')
     const p = this.cur()
     const dice: [number, number] = [this.die(), this.die()]
     const sum = dice[0] + dice[1]
     const isDouble = dice[0] === dice[1]
     g.lastRoll = { id: ++g.seq, dice, player: p.id }
     g.card = null
+    g.spice = null
     g.phase = 'end'
 
     if (p.inJail) {
@@ -471,8 +539,7 @@ export class Room {
         this.release(p)
         this.log(`${p.name} 掷出 ${dice[0]}+${dice[1]} 双数，出狱`, p.id)
         g.again = false
-        this.moveBy(sum)
-        return this.afterMove()
+        return this.startMove(sum)
       }
       p.jailTurns++
       if (p.jailTurns < 3) {
@@ -488,8 +555,7 @@ export class Room {
         return
       }
       this.release(p)
-      this.moveBy(sum)
-      return this.afterMove()
+      return this.startMove(sum)
     }
 
     if (isDouble) {
@@ -502,14 +568,85 @@ export class Room {
     }
     g.again = isDouble
     this.log(`${p.name} 掷出 ${dice[0]}+${dice[1]}${isDouble ? '，双数' : ''}`, p.id)
-    this.moveBy(sum)
+    this.startMove(sum)
+  }
+
+  // ---------------- 摇骰子 ----------------
+
+  /**
+   * 摇骰子：第一次点摇 SHAKE_MS；摇的过程中再点，每过 SHAKE_EXTEND_MS 才能再加 SHAKE_EXTEND_MS，
+   * 所以一直点就一直摇，松手后最多再摇 SHAKE_MS 就停。停下时才出点数。
+   */
+  private shake() {
+    const g = this.g
+    if (g.phase !== 'roll') fail(g.phase === 'move' ? '请先走完这一步' : '现在不能掷骰子')
+    const now = Date.now()
+    // 每点一下都记一次，大家的画面上都会飘字；延长时间仍然每秒最多一次
+    g.shakeTaps = (g.shakeTaps ?? 0) + 1
+    if (!g.shakeUntil) {
+      g.shakeUntil = now + SHAKE_MS
+      g.shakeExtendedAt = now
+      g.card = null
+      g.spice = null
+    } else if (now - g.shakeExtendedAt >= SHAKE_EXTEND_MS) {
+      g.shakeUntil += SHAKE_EXTEND_MS
+      g.shakeExtendedAt = now
+    } else return
+    this.armShake()
+  }
+
+  private armShake() {
+    if (this.shakeTimer) clearTimeout(this.shakeTimer)
+    const until = this.d.game?.shakeUntil
+    if (!until) return
+    this.shakeTimer = setTimeout(() => {
+      this.shakeTimer = null
+      const g = this.d.game
+      if (!g?.shakeUntil || g.phase !== 'roll') return
+      this.runAsync(this.cur().id, { type: 'roll' }, () => this.stopShake())
+    }, Math.max(0, until - Date.now()))
+  }
+
+  /** 骰子停下，出点数 */
+  stopShake() {
+    const g = this.g
+    if (!g.shakeUntil) return
+    g.shakeUntil = null
+    this.roll()
+  }
+
+  private clearShake() {
+    if (this.d.game) this.d.game.shakeUntil = null
+    if (this.shakeTimer) clearTimeout(this.shakeTimer)
+    this.shakeTimer = null
+  }
+
+  // ---------------- 自己走 ----------------
+
+  /** 掷出点数后不自动走，由玩家一步一步走 */
+  private startMove(steps: number) {
+    const g = this.g
+    g.phase = 'move'
+    g.stepsLeft = steps
+  }
+
+  private step() {
+    const g = this.g
+    if (g.phase !== 'move' || g.stepsLeft <= 0) fail('现在不能走')
+    const p = this.cur()
+    p.pos = (p.pos + 1) % BOARD.length
+    if (p.pos === 0) this.passGo(p)
+    g.stepsLeft--
+    if (g.stepsLeft > 0) return
+    g.phase = 'end'
+    this.land()
     this.afterMove()
   }
 
   /** 一次移动的结算结束：没有待决定的事就进入下一步 */
   private afterMove() {
     const g = this.g
-    if (g.phase === 'buy' || g.phase === 'debt' || g.phase === 'over') return
+    if (g.phase === 'buy' || g.phase === 'draw' || g.phase === 'move' || g.phase === 'debt' || g.phase === 'over') return
     g.phase = g.again ? 'roll' : 'end'
   }
 
@@ -529,8 +666,10 @@ export class Room {
         return this.gameOver('rounds')
       }
     }
+    this.clearShake()
     g.turn = i
     g.phase = 'roll'
+    g.stepsLeft = 0
     g.doubles = 0
     g.again = false
     g.debt = null
@@ -546,14 +685,6 @@ export class Room {
     this.log(`${p.name} 经过起点，领取 ${money(GO_SALARY)}`, p.id)
   }
 
-  private moveBy(steps: number) {
-    const p = this.cur()
-    const to = (p.pos + steps) % BOARD.length
-    if (to < p.pos) this.passGo(p)
-    p.pos = to
-    this.land()
-  }
-
   /** 前进到指定格子（经过起点领工资） */
   moveTo(target: number, mods: RentMods = {}) {
     const p = this.cur()
@@ -566,7 +697,7 @@ export class Room {
     const p = this.cur()
     for (let k = 1; k <= BOARD.length; k++) {
       const i = (p.pos + k) % BOARD.length
-      if (BOARD[i]!.kind === kind) return this.moveTo(i, kind === 'airline' ? { airlineDouble: true } : { utilityTen: true })
+      if (this.board[i]!.kind === kind) return this.moveTo(i, kind === 'airline' ? { airlineDouble: true } : { utilityTen: true })
     }
   }
 
@@ -595,7 +726,7 @@ export class Room {
   private land(mods: RentMods = {}) {
     const g = this.g
     const p = this.cur()
-    const t = BOARD[p.pos]!
+    const t = this.board[p.pos]!
     switch (t.kind) {
       case 'go':
       case 'jail':
@@ -616,7 +747,10 @@ export class Room {
         return
       case 'chance':
       case 'chest':
-        return this.drawCard(t.kind)
+        // 像线下一样由玩家自己翻卡
+        g.phase = 'draw'
+        this.log(`${p.name} 来到${t.name}`, p.id)
+        return
     }
     const own = g.owners[p.pos]
     if (!own) {
@@ -630,14 +764,31 @@ export class Room {
       this.log(`${p.name} 来到 ${owner.name} 的 ${t.name}，已抵押，免付租金`, p.id)
       return
     }
-    const rent = this.rentOf(p.pos, mods)
+    let rent = this.rentOf(p.pos, mods)
+    // 重庆火锅：先摇辣度，租金按辣度翻倍
+    if (this.theme.spicy === p.pos) {
+      const s = this.spice()
+      g.spice = { id: ++g.seq, level: s.level, mult: s.mult, player: p.id }
+      rent *= s.mult
+      this.log(`${t.name}火锅辣度：${s.level}${s.mult > 1 ? `，租金 ×${s.mult}` : ''}`, p.id)
+    }
     this.log(`${p.name} 来到 ${owner.name} 的 ${t.name}，付租金 ${money(rent)}`, p.id)
     this.charge(rent, [owner.id], `${t.name} 的租金`)
   }
 
+  private spice() {
+    const total = SPICE_LEVELS.reduce((n, s) => n + s.weight, 0)
+    let r = this.rng() * total
+    for (const s of SPICE_LEVELS) {
+      r -= s.weight
+      if (r < 0) return s
+    }
+    return SPICE_LEVELS[0]!
+  }
+
   rentOf(pos: number, mods: RentMods = {}) {
     const g = this.g
-    const t = BOARD[pos] as BuyableTile
+    const t = this.board[pos] as BuyableTile
     const own = g.owners[pos]
     if (!own) return 0
     const count = (kind: 'airline' | 'utility') =>
@@ -652,7 +803,7 @@ export class Room {
   }
 
   private ownsGroup(owner: string, pos: number) {
-    const t = BOARD[pos]!
+    const t = this.board[pos]!
     if (t.kind !== 'country') return false
     return groupTiles(t.group).every((i) => this.g.owners[i]?.owner === owner)
   }
@@ -670,9 +821,10 @@ export class Room {
     const card = DECKS[deck][idx]!
     // 出狱卡由玩家保留，用掉后才放回牌堆
     if (idx !== JAIL_CARD[deck]) g.decks[deck].push(idx)
-    const drawn: DrawnCard = { id: ++g.seq, deck, text: card.text, player: p.id }
+    const text = this.fill(card.text)
+    const drawn: DrawnCard = { id: ++g.seq, deck, text, player: p.id }
     g.card = drawn
-    this.log(`${p.name} 抽到${deck === 'chance' ? '机会' : '命运'}：${card.text}`, p.id)
+    this.log(`${p.name} 抽到${deck === 'chance' ? '机会' : '命运'}：${text}`, p.id)
     card.act(this)
   }
 
@@ -768,7 +920,7 @@ export class Room {
     g.afterDebt = null
     if (after) {
       this.release(p)
-      this.moveBy(after.move)
+      return this.startMove(after.move)
     }
     this.afterMove()
   }
@@ -782,13 +934,13 @@ export class Room {
       if (!withHouses.length) break
       const [i, o] = withHouses[0]!
       o.houses--
-      p.cash += (BOARD[i] as Extract<BuyableTile, { kind: 'country' }>).house / 2
+      p.cash += (this.board[i] as Extract<BuyableTile, { kind: 'country' }>).house / 2
     }
     for (const [i, o] of owned()) {
       if (p.cash >= amount) break
       if (o.mortgaged) continue
       o.mortgaged = true
-      p.cash += mortgageValue(BOARD[i] as BuyableTile)
+      p.cash += mortgageValue(this.board[i] as BuyableTile)
     }
   }
 
@@ -802,7 +954,7 @@ export class Room {
     for (const [key, o] of Object.entries(g.owners)) {
       if (o.owner !== p.id) continue
       const i = Number(key)
-      const t = BOARD[i]!
+      const t = this.board[i]!
       if (o.houses > 0 && t.kind === 'country') p.cash += (o.houses * t.house) / 2
       o.houses = 0
       if (heir) o.owner = heir.id
@@ -837,7 +989,7 @@ export class Room {
     const g = this.g
     if (g.phase !== 'buy') fail('现在不能购买')
     const p = this.cur()
-    const t = BOARD[p.pos] as BuyableTile
+    const t = this.board[p.pos] as BuyableTile
     if (p.cash < t.price) fail('现金不够')
     p.cash -= t.price
     g.owners[p.pos] = { owner: p.id, houses: 0, mortgaged: false }
@@ -855,21 +1007,21 @@ export class Room {
   /** 盖房子要在自己的回合，并且没有待决定的事 */
   private needManage() {
     const ph = this.g.phase
-    if (ph !== 'roll' && ph !== 'end') fail(ph === 'debt' ? '欠款期间只能卖房和抵押' : '请先决定是否购买')
+    if (ph !== 'roll' && ph !== 'end') fail(ph === 'debt' ? '欠款期间只能卖房和抵押' : ph === 'draw' ? '请先抽卡' : '请先决定是否购买')
   }
 
   private build(p: GamePlayer, tile: number) {
     this.needManage()
     const own = this.needOwn(p, tile)
-    const t = BOARD[tile]!
-    if (t.kind !== 'country') fail('只有国家可以盖房子')
+    const t = this.board[tile]!
+    if (t.kind !== 'country') fail(`只有${this.theme.land}可以盖房子`)
     const c = t as Extract<BuyableTile, { kind: 'country' }>
     const group = groupTiles(c.group)
-    if (!this.ownsGroup(p.id, tile)) fail('需要先集齐同色的全部国家')
-    if (group.some((i) => this.g.owners[i]!.mortgaged)) fail('同色有国家在抵押中，不能盖房')
+    if (!this.ownsGroup(p.id, tile)) fail(`需要先集齐同色的全部${this.theme.land}`)
+    if (group.some((i) => this.g.owners[i]!.mortgaged)) fail(`同色有${this.theme.land}在抵押中，不能盖房`)
     if (own.houses >= 5) fail('已经有酒店了')
     const min = Math.min(...group.map((i) => this.g.owners[i]!.houses))
-    if (own.houses > min) fail('同色国家要平均盖房，先盖房子少的')
+    if (own.houses > min) fail(`同色${this.theme.land}要平均盖房，先盖房子少的`)
     if (p.cash < c.house) fail('现金不够')
     p.cash -= c.house
     own.houses++
@@ -879,11 +1031,11 @@ export class Room {
   private sell(p: GamePlayer, tile: number) {
     if (this.g.phase === 'buy') fail('请先决定是否购买')
     const own = this.needOwn(p, tile)
-    const t = BOARD[tile]!
+    const t = this.board[tile]!
     if (t.kind !== 'country' || own.houses === 0) fail('这里没有房子')
     const c = t as Extract<BuyableTile, { kind: 'country' }>
     const max = Math.max(...groupTiles(c.group).map((i) => this.g.owners[i]!.houses))
-    if (own.houses < max) fail('同色国家要平均拆房，先拆房子多的')
+    if (own.houses < max) fail(`同色${this.theme.land}要平均拆房，先拆房子多的`)
     own.houses--
     p.cash += c.house / 2
     this.log(`${p.name} 卖掉 ${c.name} 的${own.houses === 4 ? '酒店' : '一栋房子'}，收回 ${money(c.house / 2)}`, p.id)
@@ -893,8 +1045,8 @@ export class Room {
     if (this.g.phase === 'buy') fail('请先决定是否购买')
     const own = this.needOwn(p, tile)
     if (own.mortgaged) fail('已经抵押了')
-    const t = BOARD[tile] as BuyableTile
-    if (t.kind === 'country' && groupTiles(t.group).some((i) => (this.g.owners[i]?.houses ?? 0) > 0)) fail('同色国家还有房子，要先卖掉')
+    const t = this.board[tile] as BuyableTile
+    if (t.kind === 'country' && groupTiles(t.group).some((i) => (this.g.owners[i]?.houses ?? 0) > 0)) fail(`同色${this.theme.land}还有房子，要先卖掉`)
     own.mortgaged = true
     p.cash += mortgageValue(t)
     this.log(`${p.name} 抵押 ${t.name}，得到 ${money(mortgageValue(t))}`, p.id)
@@ -904,7 +1056,7 @@ export class Room {
     this.needManage()
     const own = this.needOwn(p, tile)
     if (!own.mortgaged) fail('没有抵押')
-    const t = BOARD[tile] as BuyableTile
+    const t = this.board[tile] as BuyableTile
     const cost = unmortgageCost(t)
     if (p.cash < cost) fail('现金不够')
     p.cash -= cost
@@ -915,7 +1067,7 @@ export class Room {
   // ---------------- 交易 ----------------
 
   private cleanSide(s: Partial<TradeSide> | undefined): TradeSide {
-    const tiles = [...new Set((Array.isArray(s?.tiles) ? s!.tiles : []).map(Number))].filter((i) => Number.isInteger(i) && BOARD[i] && isBuyable(BOARD[i]!))
+    const tiles = [...new Set((Array.isArray(s?.tiles) ? s!.tiles : []).map(Number))].filter((i) => Number.isInteger(i) && this.board[i] && isBuyable(this.board[i]!))
     return {
       cash: Math.max(0, Math.floor(Number(s?.cash) || 0)),
       tiles,
@@ -929,9 +1081,9 @@ export class Room {
     if (p.cash < s.cash) fail(`${p.name} 的现金不够 ${money(s.cash)}`)
     if (p.jailCards < s.jailCards) fail(`${p.name} 没有那么多出狱卡`)
     for (const i of s.tiles) {
-      if (g.owners[i]?.owner !== p.id) fail(`${tileName(i)} 不属于 ${p.name}`)
-      const t = BOARD[i]!
-      if (t.kind === 'country' && groupTiles(t.group).some((j) => (g.owners[j]?.houses ?? 0) > 0)) fail(`${tileName(i)} 同色还有房子，要先卖掉才能交易`)
+      if (g.owners[i]?.owner !== p.id) fail(`${this.tileName(i)} 不属于 ${p.name}`)
+      const t = this.board[i]!
+      if (t.kind === 'country' && groupTiles(t.group).some((j) => (g.owners[j]?.houses ?? 0) > 0)) fail(`${this.tileName(i)} 同色还有房子，要先卖掉才能交易`)
     }
   }
 
@@ -951,7 +1103,7 @@ export class Room {
   }
 
   private sideText(s: TradeSide) {
-    const parts = [...s.tiles.map(tileName)]
+    const parts = [...s.tiles.map((i) => this.tileName(i))]
     if (s.cash) parts.push(money(s.cash))
     if (s.jailCards) parts.push(`${s.jailCards} 张出狱卡`)
     return parts.length ? parts.join('、') : '无'
@@ -992,7 +1144,7 @@ export class Room {
     let total = p.cash
     for (const [key, o] of Object.entries(this.g.owners)) {
       if (o.owner !== p.id) continue
-      const t = BOARD[Number(key)] as BuyableTile
+      const t = this.board[Number(key)] as BuyableTile
       total += o.mortgaged ? t.price / 2 : t.price
       if (t.kind === 'country') total += o.houses * t.house
     }
@@ -1001,6 +1153,8 @@ export class Room {
 
   private gameOver(reason: EndReason) {
     const g = this.g
+    this.clearShake()
+    g.stepsLeft = 0
     const standings = [...g.players]
       .sort((a, b) => {
         if (a.bankrupt !== b.bankrupt) return a.bankrupt ? 1 : -1
@@ -1025,8 +1179,8 @@ export class Room {
   }
 
   static gameView(g: GameState): GameView {
-    const { decks: _d, afterDebt: _a, seq: _s, ...view } = g
-    return view
+    const { decks: _d, afterDebt: _a, seq: _s, shakeUntil, shakeExtendedAt: _e, ...view } = g
+    return { ...view, theme: view.theme ?? 'world', spice: view.spice ?? null, shakeTaps: view.shakeTaps ?? 0, shakeMs: shakeUntil ? Math.max(0, shakeUntil - Date.now()) : null }
   }
 
   /** 回放：用当时的对局状态拼出旁观视角 */

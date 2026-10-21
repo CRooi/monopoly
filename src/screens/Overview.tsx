@@ -55,7 +55,7 @@ function CodeForm({ onSubmit }: { onSubmit: (code: string) => void }) {
 function Screen({ code }: { code: string }) {
   const { state, status, gone, upgrading } = useSpectator(code)
   useEffect(() => {
-    document.title = `大屏 · 房间 ${code} - 大富翁`
+    document.title = `大屏 房间 ${code} - 大富翁`
   }, [code])
 
   return (
@@ -73,7 +73,7 @@ function Screen({ code }: { code: string }) {
         ) : !state ? (
           <div className="py-24 text-center font-display text-2xl text-paper">正在连接…</div>
         ) : state.game && (state.room.inGame || state.game.phase === 'over') ? (
-          <WatchView state={state} />
+          <WatchView state={state} live />
         ) : (
           <div className="flex flex-col items-center gap-6 py-16">
             <div className="text-title font-display text-4xl">等待开局</div>
