@@ -196,6 +196,24 @@
   93% { transform: rotate(2deg); }
   97% { transform: rotate(-1deg); }
 }
+/* 待摇的骰子轻轻晃，像在等人去摇 */
+@keyframes idle-dice {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-3px) rotate(-3deg); }
+}
+.animate-idle-dice > * { animation: idle-dice 1.8s ease-in-out infinite; }
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  12% { transform: scale(1.06); }
+  24% { transform: scale(1); }
+  36% { transform: scale(1.04); }
+  50% { transform: scale(1); }
+}
+@keyframes spin-text {
+  from { transform: translateY(-6px); opacity: 0.2; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-heartbeat { animation: heartbeat 0.65s ease-in-out infinite; }
 .animate-shake { animation: shake 0.25s linear infinite; }
 .animate-wiggle { animation: wiggle 2.4s ease-in-out infinite; }
 @keyframes tap-float {

@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
-import { BAIL, BOARD, GO_SALARY, JAIL_POS, type ClientMessage } from '../../shared/types'
+import { BAIL, BOARD, GO_SALARY, JAIL_POS, SPICE_LEVELS, type ClientMessage } from '../../shared/types'
 import { GameError, Room } from './room'
 
 /** 建房并开局：玩家顺序固定为 A、B、C… */
+/** 默认用世界地图，规则测试不受重庆火锅影响；测中国城市时传 theme */
 function setup(n = 2, config = {}) {
-  const { room, user: a } = Room.create('1234', config, 'A')
+  const { room, user: a } = Room.create('1234', { theme: 'world', ...config }, 'A')
   const users = [a]
   for (let i = 1; i < n; i++) users.push(room.join(String.fromCharCode(65 + i)))
   // 不打乱顺序
@@ -55,6 +56,11 @@ describe('房间', () => {
     const b = room.join('B')
     room.handle(user.id, { type: 'leave' })
     expect(room.d.hostId).toBe(b.id)
+  })
+
+  test('新房间默认是中国城市地图', () => {
+    const { room } = Room.create('1000', {}, '房主')
+    expect(room.d.config.theme).toBe('china')
   })
 
   test('配置非法值回落为默认', () => {
@@ -406,6 +412,20 @@ describe('中国城市主题', () => {
     expect(room.board[39]!.kind === 'country' && room.board[39]!.price).toBe(Math.max(...prices))
   })
 
+  test('重庆售价 $500，其他格子价格和世界地图一样', () => {
+    const { room, g, act } = setup(2, { theme: 'china' })
+    const china = room.board
+    expect(china[39]!.kind === 'country' && china[39]!.price).toBe(500)
+    expect(china[37]!.kind === 'country' && china[37]!.price).toBe(350)
+    g.players[0]!.pos = 36
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    act(0, { type: 'buy' })
+    expect(g.players[0]!.cash).toBe(1000)
+    expect(room.worth(g.players[0]!)).toBe(1500)
+  })
+
   test('卡片里的地名跟着主题换', () => {
     const { room, g, act } = setup(2, { theme: 'china' })
     // 机会牌堆没打乱：第二张是「前进到{39}」
@@ -419,18 +439,57 @@ describe('中国城市主题', () => {
     expect(g.players[0]!.pos).toBe(39)
   })
 
-  test('停在别人的重庆要摇火锅辣度，特辣租金 ×3', () => {
+  test('停在别人的重庆要摇火锅辣度，最辣一档租金 ×3', () => {
     const { room, g, act, ids } = setup(2, { theme: 'china' })
     g.owners[39] = { owner: ids[1]!, houses: 0, mortgaged: false }
     g.players[0]!.pos = 36
     dice(room, 1, 2)
     act(0, { type: 'roll' })
-    // 辣度用同一个随机数：0.99 落在最后一档「特辣」
+    // 辣度用同一个随机数：0.99 落在最后一档
     room.rng = () => 0.99
     while (g.phase === 'move') act(0, { type: 'step' })
-    expect(g.spice!.level).toBe('特辣')
+    expect(g.spice!.level).toBe('超级无敌特特特特特特特特特变态辣')
     expect(g.players[0]!.cash).toBe(1500 - 50 * 3)
     expect(g.players[1]!.cash).toBe(1500 + 50 * 3)
+  })
+
+  test('辣度最淡一档租金不变', () => {
+    const { room, g, act, ids } = setup(2, { theme: 'china' })
+    g.owners[39] = { owner: ids[1]!, houses: 0, mortgaged: false }
+    g.players[0]!.pos = 36
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    room.rng = () => 0
+    while (g.phase === 'move') act(0, { type: 'step' })
+    expect(g.spice!.mult).toBe(1)
+    expect(g.players[0]!.cash).toBe(1500 - 50)
+  })
+
+  test('带小数的辣度倍数，租金四舍五入', () => {
+    const { room, g, act, ids } = setup(2, { theme: 'china' })
+    g.owners[39] = { owner: ids[1]!, houses: 0, mortgaged: false }
+    g.players[0]!.pos = 36
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    // 落在第二档 ×1.25：$50 → $62.5 → $63
+    room.rng = () => 1.5 / 9
+    while (g.phase === 'move') act(0, { type: 'step' })
+    expect(g.spice!.mult).toBe(1.25)
+    expect(g.players[0]!.cash).toBe(1500 - 63)
+  })
+
+  test('九档辣度概率一样', () => {
+    for (let k = 0; k < SPICE_LEVELS.length; k++) {
+      const { room, g, act, ids } = setup(2, { theme: 'china' })
+      g.owners[39] = { owner: ids[1]!, houses: 0, mortgaged: false }
+      g.players[0]!.pos = 36
+      dice(room, 1, 2)
+      act(0, { type: 'roll' })
+      // 随机数落在第 k 段的中间，就该摇出第 k 档
+      room.rng = () => (k + 0.5) / SPICE_LEVELS.length
+      while (g.phase === 'move') act(0, { type: 'step' })
+      expect(g.spice!.level).toBe(SPICE_LEVELS[k]!.level)
+    }
   })
 
   test('世界主题没有辣度', () => {

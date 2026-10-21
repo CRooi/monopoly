@@ -1,5 +1,5 @@
 import {
-  BOARD,
+  boardFor,
   GROUP_COLOR,
   groupTiles,
   isBuyable,
@@ -22,12 +22,12 @@ export function tileSwatch(t: Tile) {
 
 /** 前端用来决定显示哪些按钮，最终以服务端校验为准 */
 export function ownsGroup(g: GameView, owner: string, tile: number) {
-  const t = BOARD[tile]!
+  const t = boardFor(g.theme)[tile]!
   return t.kind === 'country' && groupTiles(t.group).every((i) => g.owners[i]?.owner === owner)
 }
 
 export function canBuild(g: GameView, p: GamePlayer, tile: number) {
-  const t = BOARD[tile]!
+  const t = boardFor(g.theme)[tile]!
   const own = g.owners[tile]
   if (t.kind !== 'country' || !own || own.owner !== p.id || own.houses >= 5) return false
   if (!ownsGroup(g, p.id, tile)) return false
@@ -37,21 +37,21 @@ export function canBuild(g: GameView, p: GamePlayer, tile: number) {
 }
 
 export function canSell(g: GameView, p: GamePlayer, tile: number) {
-  const t = BOARD[tile]!
+  const t = boardFor(g.theme)[tile]!
   const own = g.owners[tile]
   if (t.kind !== 'country' || !own || own.owner !== p.id || own.houses === 0) return false
   return own.houses >= Math.max(...groupTiles(t.group).map((i) => g.owners[i]?.houses ?? 0))
 }
 
 export function canMortgage(g: GameView, p: GamePlayer, tile: number) {
-  const t = BOARD[tile]!
+  const t = boardFor(g.theme)[tile]!
   const own = g.owners[tile]
   if (!isBuyable(t) || !own || own.owner !== p.id || own.mortgaged) return false
   return t.kind !== 'country' || groupTiles(t.group).every((i) => (g.owners[i]?.houses ?? 0) === 0)
 }
 
 export function canUnmortgage(g: GameView, p: GamePlayer, tile: number) {
-  const t = BOARD[tile]!
+  const t = boardFor(g.theme)[tile]!
   const own = g.owners[tile]
   return isBuyable(t) && !!own && own.owner === p.id && own.mortgaged && p.cash >= unmortgageCost(t)
 }
@@ -61,7 +61,7 @@ export function worth(g: GameView, p: GamePlayer) {
   let total = p.cash
   for (const [key, o] of Object.entries(g.owners)) {
     if (o.owner !== p.id) continue
-    const t = BOARD[Number(key)] as BuyableTile
+    const t = boardFor(g.theme)[Number(key)] as BuyableTile
     total += o.mortgaged ? mortgageValue(t) : t.price
     if (t.kind === 'country') total += o.houses * t.house
   }
@@ -80,7 +80,7 @@ export function ownedTiles(g: GameView, id: string) {
 export function liquidValue(g: GameView, p: GamePlayer) {
   let total = p.cash
   for (const i of ownedTiles(g, p.id)) {
-    const t = BOARD[i] as BuyableTile
+    const t = boardFor(g.theme)[i] as BuyableTile
     const o = g.owners[i]!
     if (t.kind === 'country') total += (o.houses * t.house) / 2
     if (!o.mortgaged) total += mortgageValue(t)

@@ -7,6 +7,7 @@ import { ChanceMark, Chest, Die } from '@/components/art/icons'
 import { Button } from '@/components/ui/button'
 import type { ConfirmRequest } from '@/components/game/ConfirmDialog'
 import { money } from '@/lib/rules'
+import type { SpiceStage } from '@/hooks/useSpiceReveal'
 import { sfx } from '@/lib/sound'
 import { cn } from '@/lib/utils'
 
@@ -69,18 +70,23 @@ function Dice({ game }: { game: GameView }) {
     landed.current = roll.id
     sfx.land()
   }, [roll])
-  const [a, b] = shaking ? faces : (roll?.dice ?? [1, 1])
+  // 轮到掷骰子但还没摇（包括双数后再摇一次）：不显示上一次的点数，显示两颗待摇的骰子
+  const idle = game.phase === 'roll' && !shaking
+  const [a, b] = shaking ? faces : idle ? [0, 0] : (roll?.dice ?? [0, 0])
   const size = 'size-[clamp(34px,8cqw,58px)]'
-  const double = !shaking && roll && roll.dice[0] === roll.dice[1]
+  const double = !shaking && !idle && roll && roll.dice[0] === roll.dice[1]
   return (
     <div className="relative flex flex-col items-center gap-1">
       <TapFloats taps={game.shakeTaps} />
-      <div key={shaking ? 'shaking' : (roll?.id ?? 0)} className={cn('flex gap-3', shaking ? 'animate-shake' : roll && 'animate-pop')}>
+      <div
+        key={shaking ? 'shaking' : idle ? 'idle' : (roll?.id ?? 0)}
+        className={cn('flex gap-3', shaking ? 'animate-shake' : idle ? 'animate-idle-dice' : roll && 'animate-pop')}
+      >
         <Die value={a} className={size} />
-        <Die value={b} className={size} />
+        <Die value={b} className={cn(size, idle && '[animation-delay:-0.6s]')} />
       </div>
       <div className="h-4 text-xs text-ink/55">
-        {!shaking && roll && (
+        {!shaking && !idle && roll && (
           <>
             {roll.dice[0] + roll.dice[1]} 点{double && <span className="ml-1 font-semibold text-brick">双数</span>}
           </>
@@ -91,42 +97,55 @@ function Dice({ game }: { game: GameView }) {
 }
 
 /** 重庆火锅辣度：先在几档之间跳一会儿，再停在摇出的那档 */
-function SpiceView({ game }: { game: GameView }) {
+/** 辣度条从黄到深红 */
+const HEAT = ['#ffd43b', '#ffc233', '#ffa62b', '#ff8a24', '#ff6b1f', '#f04a1a', '#d92b14', '#b8140f', '#8f0008']
+
+function SpiceView({ game, spinning, stage }: { game: GameView; spinning: number | null; stage: SpiceStage | null }) {
   const spice = game.spice
-  const [spinning, setSpinning] = useState<number | null>(null)
-  const seen = useRef(spice?.id)
-  useEffect(() => {
-    if (!spice || spice.id === seen.current) return
-    seen.current = spice.id
-    let i = 0
-    setSpinning(0)
-    const t = setInterval(() => {
-      i++
-      sfx.tap()
-      if (i >= 12) {
-        clearInterval(t)
-        setSpinning(null)
-        sfx.land()
-      } else setSpinning(i % SPICE_LEVELS.length)
-    }, 110)
-    return () => clearInterval(t)
-  }, [spice])
   if (!spice) return null
-  const shown = spinning !== null ? SPICE_LEVELS[spinning]! : { level: spice.level, mult: spice.mult }
+  const settled = stage === null
+  const index = spinning ?? Math.max(0, SPICE_LEVELS.findIndex((s) => s.level === spice.level))
+  const shown = SPICE_LEVELS[index]!
+  const top = settled && index === SPICE_LEVELS.length - 1
   const name = boardFor(game.theme)[themeOf(game.theme).spicy ?? 39]!.name
   return (
-    <div className={cn('flex w-full items-center gap-2.5 rounded-lg border border-[#f5a08a] bg-[#fff0eb] px-3 py-2', spinning === null && 'animate-pop')}>
-      <span className="flex shrink-0">
-        {Array.from({ length: 3 }, (_, i) => (
-          <Flame key={i} className={cn('size-5', i < shown.mult ? 'fill-[#ff6b35] text-[#d63c2f]' : 'text-ink/15')} />
+    <div
+      className={cn(
+        'w-full space-y-1.5 rounded-lg border px-3 py-2 text-left transition-transform',
+        stage === 'spin' && 'scale-[1.03] border-[#ff8a24] bg-[#fff6ee] shadow-[0_0_0_3px_rgb(255_138_36/0.25)]',
+        stage === 'pause' && 'animate-heartbeat border-[#d92b14] bg-[#fff0eb] shadow-[0_0_18px_rgb(217_43_20/0.35)]',
+        settled && (top ? 'animate-[shake_0.25s_linear_5] border-[#8f0008] bg-[#fff0eb]' : 'animate-pop border-[#f5a08a] bg-[#fff0eb]'),
+      )}
+    >
+      <div className="flex items-center gap-1.5">
+        <Flame className={cn('size-4 text-[#d63c2f]', settled ? 'fill-[#ff6b35]' : 'animate-pulse fill-[#ffb08a]')} />
+        <span className="text-[11px] font-semibold text-brick">{name}火锅</span>
+        <span
+          key={settled ? 'mult' : 'unknown'}
+          className={cn('ml-auto font-bold tabular-nums text-brick', settled ? cn('animate-pop', top ? 'text-xl' : 'text-sm') : 'text-sm opacity-60', stage === 'pause' && 'animate-pulse opacity-100')}
+        >
+          租金 ×{settled ? shown.mult : '?'}
+        </span>
+      </div>
+      <div className="flex gap-0.5">
+        {HEAT.map((c, i) => (
+          <span
+            key={i}
+            className={cn('h-1.5 flex-1 rounded-full transition-colors duration-75', i === index && !settled && 'scale-y-150')}
+            style={{ background: i <= index ? c : 'rgb(43 33 24 / 0.08)' }}
+          />
         ))}
-      </span>
-      <div className="min-w-0 text-left">
-        <div className="text-[11px] font-semibold text-brick">{name}火锅</div>
-        <div className="text-[13px] leading-snug">
-          {shown.level}
-          {spinning === null && shown.mult > 1 && <span className="ml-1 font-semibold text-brick">租金 ×{shown.mult}</span>}
-        </div>
+      </div>
+      <div
+        key={stage === 'spin' ? index : 'still'}
+        className={cn(
+          'leading-snug',
+          stage === 'spin' && 'animate-[spin-text_0.12s_ease-out] text-[13px] text-ink/70',
+          stage === 'pause' && 'text-[13px] font-semibold',
+          settled && (top ? 'bg-[linear-gradient(90deg,#d92b14,#8f0008)] bg-clip-text font-display text-base text-transparent' : 'text-[13px] font-semibold'),
+        )}
+      >
+        {shown.level}
       </div>
     </div>
   )
@@ -198,8 +217,14 @@ export function TurnPanel({
   confirm,
   onAssets,
   onDone,
+  spin = null,
+  spinStage = null,
 }: {
   state: StateView
+  /** 重庆火锅辣度当前停在哪一档 */
+  spin?: number | null
+  /** 重庆火锅辣度正在转或停顿中，这期间不显示操作按钮 */
+  spinStage?: SpiceStage | null
   send: (m: ClientMessage) => void
   confirm: (r: ConfirmRequest) => void
   /** 打开自己的资产面板（欠款时卖房、抵押） */
@@ -269,7 +294,7 @@ export function TurnPanel({
 
       <Dice game={g} />
       <CardView game={g} />
-      <SpiceView game={g} />
+      <SpiceView game={g} spinning={spin} stage={spinStage} />
       {g.phase === 'draw' && (tile.kind === 'chance' || tile.kind === 'chest') && (
         <CardBack deck={tile.kind} onFlip={mine ? () => send({ type: 'drawCard' }) : undefined} />
       )}
@@ -298,14 +323,14 @@ export function TurnPanel({
         </div>
       )}
 
-      {mine && (
+      {mine && spinStage === null && (
         <div className="flex w-full flex-wrap justify-center gap-2">
           {g.phase === 'roll' && (
             <>
               <Button
                 variant="red"
                 size="lg"
-                className={cn('min-w-24 flex-1 select-none', shaking && 'animate-shake')}
+                className="min-w-24 flex-1 select-none"
                 onClick={() => send({ type: 'shake' })}
               >
                 {shaking ? '继续摇' : '摇骰子'}

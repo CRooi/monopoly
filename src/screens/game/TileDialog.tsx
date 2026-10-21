@@ -1,6 +1,8 @@
 import {
   AIRLINE_RENT,
   boardFor,
+  themeOf,
+  SPICE_LEVELS,
   GROUP_COLOR,
   UTILITY_MULT,
   isBuyable,
@@ -9,6 +11,7 @@ import {
   type GamePlayer,
   type GameView,
 } from '@shared/types'
+import { Flame } from 'lucide-react'
 import { Avatar } from '@/components/art/Avatar'
 import { TileMark } from '@/components/art/TileMark'
 import { Buildings } from '@/components/art/icons'
@@ -84,6 +87,20 @@ export function TileDialog({
                 {t.kind === 'utility' &&
                   UTILITY_MULT.map((m, i) => <Row key={i} label={`拥有 ${i + 1} 家`} value={`点数 × ${m}`} active={ownedCount('utility') === i + 1} />)}
                 <Row label="抵押" value={money(mortgageValue(t))} />
+              </div>
+            )}
+
+            {tile === themeOf(game.theme).spicy && (
+              <div className="mx-3 space-y-0.5 rounded-lg border border-[#f5a08a] bg-[#fff0eb] px-2 py-1.5">
+                <div className="flex items-center gap-1 px-1 pb-0.5 text-xs font-semibold text-brick">
+                  <Flame className="size-3.5 fill-[#ff6b35]" /> 火锅辣度
+                </div>
+                {SPICE_LEVELS.map((s) => (
+                  <div key={s.level} className="flex justify-between gap-2 px-1 text-xs">
+                    <span className="truncate text-ink/75">{s.level}</span>
+                    <span className="shrink-0 tabular-nums">租金 ×{s.mult}</span>
+                  </div>
+                ))}
               </div>
             )}
 

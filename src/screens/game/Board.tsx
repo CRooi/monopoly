@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { CircleParking, Droplets, Gem, Plane, Receipt, Siren, TrainFront, Zap } from 'lucide-react'
-import { BOARD, GROUP_COLOR, boardFor, JAIL_POS, type GamePlayer, type GameView, type Ownership, type Tile } from '@shared/types'
+import { CircleParking, Droplets, Flame, Gem, Plane, Receipt, Siren, TrainFront, Zap } from 'lucide-react'
+import { BOARD, GROUP_COLOR, boardFor, themeOf, JAIL_POS, type GamePlayer, type GameView, type Ownership, type Tile } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
 import { CityBadge } from '@/components/art/CityBadge'
+import { CityIcon } from '@/components/art/CityIcon'
 import { Flag } from '@/components/art/Flag'
 import { Buildings, ChanceMark, Chest, GoArrow, JailBars } from '@/components/art/icons'
 import { DeltaPop } from '@/components/game/CashTicker'
@@ -150,7 +151,11 @@ function TileFace({ tile, side, pot }: { tile: Tile; side: Side; pot: number }) 
           {tile.iso ? (
             <Flag iso={tile.iso} className={horizontal ? 'w-[3.6cqw]' : 'w-[3.8cqw]'} />
           ) : (
-            <CityBadge badge={tile.badge ?? tile.name[0]!} color={GROUP_COLOR[tile.group]} className="w-[3.4cqw] text-[1.9cqw]" />
+            <CityIcon
+              name={tile.name}
+              className="w-[4.4cqw]"
+              fallback={<CityBadge badge={tile.badge ?? tile.name[0]!} color={GROUP_COLOR[tile.group]} className="w-[3.4cqw] text-[1.9cqw]" />}
+            />
           )}
           <div className="flex flex-col items-center gap-[0.3cqw]">
             {label}
@@ -164,6 +169,7 @@ function TileFace({ tile, side, pot }: { tile: Tile; side: Side; pot: number }) 
 function TileCell({
   index,
   tile,
+  special,
   own,
   ownerColor,
   pot,
@@ -172,6 +178,8 @@ function TileCell({
 }: {
   index: number
   tile: Tile
+  /** 这一格有特殊玩法（重庆火锅），角上亮一个小火苗 */
+  special?: boolean
   own?: Ownership
   ownerColor?: string
   pot: number
@@ -212,6 +220,11 @@ function TileCell({
         </div>
       )}
       <TileFace tile={tile} side={side} pot={pot} />
+      {special && (
+        <span className="pointer-events-none absolute top-[0.4cqw] right-[0.4cqw] z-10 flex size-[2.6cqw] items-center justify-center rounded-full bg-[#fff0eb] shadow-[0_0_0.8cqw_rgb(255_107_53/0.8)] animate-[heartbeat_1.6s_ease-in-out_infinite]">
+          <Flame className="size-[1.9cqw] fill-[#ff6b35] text-[#d63c2f]" />
+        </span>
+      )}
       {ownerColor && side !== 'corner' && (
         <div
           className={cn(
@@ -331,6 +344,7 @@ export function Board({
             key={i}
             index={i}
             tile={tile}
+            special={themeOf(game.theme).spicy === i}
             own={game.owners[i]}
             ownerColor={game.owners[i] ? colorOf[game.owners[i]!.owner] : undefined}
             pot={game.pot}

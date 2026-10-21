@@ -92,6 +92,18 @@ export const sfx = {
     tone(820, 620, 0.09, { type: 'sine', vol: 0.18 })
     noise(0.03, { vol: 0.15, freq: 2500, q: 4 })
   },
+  /** 心跳：揭晓前的停顿 */
+  heartbeat() {
+    tone(70, 50, 0.12, { type: 'sine', vol: 0.5 })
+    tone(70, 50, 0.12, { type: 'sine', vol: 0.4, delay: 0.18 })
+  },
+  /** 揭晓 */
+  reveal() {
+    noise(0.25, { vol: 0.25, freq: 900, q: 0.6 })
+    tone(392, 392, 0.12, { type: 'triangle', vol: 0.14 })
+    tone(523, 523, 0.12, { type: 'triangle', vol: 0.14, delay: 0.1 })
+    tone(784, 784, 0.35, { type: 'triangle', vol: 0.14, delay: 0.2 })
+  },
   /** 骰子落定 */
   land() {
     noise(0.06, { vol: 0.5, freq: 1200, q: 2 })

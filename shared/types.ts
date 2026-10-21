@@ -108,17 +108,26 @@ export interface Theme {
   land: string
   /** 交通线路叫什么：航线 / 高铁 */
   transit: string
-  /** 换掉的格子名字 */
-  names: Record<number, { name: string; badge?: string }>
+  /** 换掉的格子名字，price 为这个主题里单独调整的售价 */
+  names: Record<number, { name: string; badge?: string; price?: number }>
   /** 火锅辣度：停在这块别人的地上要摇辣度，租金按辣度翻倍 */
   spicy?: number
 }
 
-/** 重庆火锅的辣度，按概率摇出 */
+/**
+ * 重庆火锅的辣度，从淡到辣，每档概率一样。
+ * 倍数从 ×1 到 ×3，每档加 0.25，平均 ×2
+ */
 export const SPICE_LEVELS = [
-  { level: '微辣', mult: 1, weight: 3 },
-  { level: '中辣', mult: 2, weight: 2 },
-  { level: '特辣', mult: 3, weight: 1 },
+  { level: '大海里的一滴辣椒油', mult: 1, weight: 1 },
+  { level: '微微辣，辣椒只是路过', mult: 1.25, weight: 1 },
+  { level: '外地人的微辣', mult: 1.5, weight: 1 },
+  { level: '正常人的中辣', mult: 1.75, weight: 1 },
+  { level: '重庆人口中的微辣', mult: 2, weight: 1 },
+  { level: '特辣，嘴巴开始冒烟', mult: 2.25, weight: 1 },
+  { level: '变态辣，耳朵在喷火', mult: 2.5, weight: 1 },
+  { level: '地狱辣，灵魂已经出窍', mult: 2.75, weight: 1 },
+  { level: '超级无敌特特特特特特特特特变态辣', mult: 3, weight: 1 },
 ]
 
 export const THEMES: Record<ThemeId, Theme> = {
@@ -157,12 +166,13 @@ export const THEMES: Record<ThemeId, Theme> = {
       34: { name: '北京', badge: '京' },
       35: { name: '成渝高铁' },
       37: { name: '上海', badge: '沪' },
-      39: { name: '重庆', badge: '渝' },
+      // 重庆有火锅辣度，租金平均约 1.67 倍，售价也比原来的 $400 贵
+      39: { name: '重庆', badge: '渝', price: 500 },
     },
   },
 }
 
-export const THEME_OPTIONS: ThemeId[] = ['world', 'china']
+export const THEME_OPTIONS: ThemeId[] = ['china', 'world']
 
 export const themeOf = (id: ThemeId | undefined) => THEMES[id ?? 'world'] ?? THEMES.world
 
@@ -176,7 +186,9 @@ export function boardFor(id: ThemeId | undefined): Tile[] {
     b = BOARD.map((t, i) => {
       const n = theme.names[i]
       if (!n) return t
-      return t.kind === 'country' ? { ...t, name: n.name, badge: n.badge, iso: undefined } : { ...t, name: n.name }
+      return t.kind === 'country'
+        ? { ...t, name: n.name, badge: n.badge, iso: undefined, price: n.price ?? t.price }
+        : { ...t, name: n.name }
     })
     boards.set(theme.id, b)
   }
@@ -243,7 +255,7 @@ export interface RoomConfig {
 }
 
 export const DEFAULT_CONFIG: RoomConfig = {
-  theme: 'world',
+  theme: 'china',
   startCash: 1500,
   maxRounds: 0,
   parkingPot: false,

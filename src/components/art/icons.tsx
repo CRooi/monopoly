@@ -26,8 +26,18 @@ const PIPS: Record<number, [number, number][]> = {
   6: [[28, 24], [72, 24], [28, 50], [72, 50], [28, 76], [72, 76]],
 }
 
-/** 骰子 */
+/** 骰子；value 为 0 时是还没摇的样子，面上一个问号 */
 export function Die({ value, className, ...p }: P & { value: number }) {
+  if (value === 0)
+    return (
+      <svg viewBox="0 0 100 100" className={className} {...p}>
+        <rect x="4" y="8" width="92" height="88" rx="18" fill="#2b2118" opacity="0.25" />
+        <rect x="4" y="4" width="92" height="88" rx="18" fill="#fffdf6" stroke="#2b2118" strokeOpacity="0.35" strokeWidth="5" strokeDasharray="10 7" />
+        <text x="50" y="50" textAnchor="middle" dominantBaseline="central" fontSize="46" fontWeight="700" fill="#2b2118" fillOpacity="0.3">
+          ?
+        </text>
+      </svg>
+    )
   return (
     <svg viewBox="0 0 100 100" className={className} {...p}>
       <rect x="4" y="8" width="92" height="88" rx="18" fill="#2b2118" />

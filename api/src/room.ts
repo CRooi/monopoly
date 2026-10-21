@@ -769,8 +769,8 @@ export class Room {
     if (this.theme.spicy === p.pos) {
       const s = this.spice()
       g.spice = { id: ++g.seq, level: s.level, mult: s.mult, player: p.id }
-      rent *= s.mult
-      this.log(`${t.name}火锅辣度：${s.level}${s.mult > 1 ? `，租金 ×${s.mult}` : ''}`, p.id)
+      rent = Math.round(rent * s.mult)
+      this.log(`${t.name}火锅辣度：${s.level}${s.mult !== 1 ? `，租金 ×${s.mult}` : ''}`, p.id)
     }
     this.log(`${p.name} 来到 ${owner.name} 的 ${t.name}，付租金 ${money(rent)}`, p.id)
     this.charge(rent, [owner.id], `${t.name} 的租金`)

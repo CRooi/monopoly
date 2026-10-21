@@ -7,6 +7,7 @@ import { ConfirmDialog, type ConfirmRequest } from '@/components/game/ConfirmDia
 import { ConnBadge } from '@/components/game/ConnBadge'
 import { Button } from '@/components/ui/button'
 import type { ConnStatus } from '@/hooks/useRoomSocket'
+import { useSpiceReveal } from '@/hooks/useSpiceReveal'
 import { setMuted, sfx, useMuted } from '@/lib/sound'
 import { cn } from '@/lib/utils'
 import { Board } from './Board'
@@ -36,7 +37,7 @@ function useGameSounds(g: GameView, meId: string) {
 }
 
 export function GameScreen({
-  state,
+  state: live,
   status,
   send,
   onDone,
@@ -47,7 +48,10 @@ export function GameScreen({
   /** 看完结果回到房间 */
   onDone: () => void
 }) {
-  const g = state.game!
+  // 重庆火锅辣度跳动期间，先不揭晓扣钱
+  const reveal = useSpiceReveal(live.game!)
+  const state = { ...live, game: reveal.game }
+  const g = state.game
   const me = g.players.find((p) => p.id === state.me.id)
   const alive = !!me && !me.bankrupt
   const [tab, setTab] = useState<Tab>('players')
@@ -174,7 +178,7 @@ export function GameScreen({
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:justify-center">
         <div className="mx-auto w-full max-w-[calc(100dvh-5.5rem)] shrink-0 lg:mx-0 lg:w-[min(calc(100dvh-5.5rem),calc(100%-23rem))] lg:max-w-none">
           <Board game={g} onTileClick={setTile} highlight={g.phase === 'buy' ? cur.pos : null}>
-            <TurnPanel state={state} send={send} confirm={setConfirm} onAssets={() => setTab('assets')} onDone={onDone} />
+            <TurnPanel state={state} spin={reveal.spin} spinStage={reveal.stage} send={send} confirm={setConfirm} onAssets={() => setTab('assets')} onDone={onDone} />
           </Board>
         </div>
 
