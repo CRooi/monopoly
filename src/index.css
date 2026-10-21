@@ -1,0 +1,183 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+/* 标题字体随项目打包，按 unicode-range 分片按需加载，不依赖 Google Fonts */
+@import "@fontsource/zcool-kuaile";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: var(--font-display);
+  --font-sans: 'Geist Variable', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-display: 'ZCOOL KuaiLe', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --color-felt: var(--felt);
+  --color-felt-deep: var(--felt-deep);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-cash: var(--cash);
+  --color-brick: var(--brick);
+  --color-gold: var(--gold);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* 游戏只有一种主题：绿色牌桌上的米色棋盘 */
+:root {
+  --felt: #0f5a3c;
+  --felt-deep: #083726;
+  --paper: #fbf5e6;
+  --ink: #2b2118;
+  --cash: #1f8a4c;
+  --brick: #d63c2f;
+  --gold: #f2b705;
+  --background: #0c4a31;
+  --foreground: #2b2118;
+  --card: #fffaf0;
+  --card-foreground: #2b2118;
+  --popover: #fffaf0;
+  --popover-foreground: #2b2118;
+  --primary: #d63c2f;
+  --primary-foreground: #ffffff;
+  --secondary: #f1e7cf;
+  --secondary-foreground: #2b2118;
+  --muted: #efe5cc;
+  --muted-foreground: #7a6a55;
+  --accent: #f6ecd2;
+  --accent-foreground: #2b2118;
+  --destructive: #d63c2f;
+  --border: #dccca6;
+  --input: #d6c49b;
+  --ring: #f2b705;
+  --radius: 0.75rem;
+  color-scheme: light;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html,
+  body {
+    @apply text-foreground font-sans;
+    overscroll-behavior: none;
+  }
+  body {
+    min-height: 100dvh;
+    background:
+      radial-gradient(circle at 50% 0%, rgb(255 255 255 / 0.08), transparent 60%),
+      repeating-linear-gradient(45deg, rgb(0 0 0 / 0.035) 0 2px, transparent 2px 6px),
+      var(--felt);
+    background-attachment: fixed;
+  }
+  button {
+    touch-action: manipulation;
+  }
+}
+
+@layer components {
+  .font-display {
+    font-family: var(--font-display);
+    letter-spacing: 0.04em;
+  }
+  /* 米色纸张面板 */
+  .panel {
+    position: relative;
+    background: #fffcf4;
+    color: var(--ink);
+    border: 1px solid rgb(43 33 24 / 0.12);
+    border-radius: var(--radius-xl);
+    box-shadow: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 1px 2px rgb(0 0 0 / 0.12), 0 12px 32px -14px rgb(0 0 0 / 0.45);
+  }
+  .panel-flat {
+    background: #fffcf4;
+    border: 1px solid rgb(43 33 24 / 0.1);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  }
+  .text-title {
+    color: #fff8e6;
+    text-shadow: 0 2px 0 rgb(0 0 0 / 0.22), 0 6px 18px rgb(0 0 0 / 0.25);
+  }
+  .board {
+    container-type: inline-size;
+  }
+}
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes rise {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  70% { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes tumble {
+  0% { transform: rotate(0) translateY(0); }
+  25% { transform: rotate(120deg) translateY(-14%); }
+  50% { transform: rotate(220deg) translateY(0); }
+  75% { transform: rotate(300deg) translateY(-6%); }
+  100% { transform: rotate(360deg) translateY(0); }
+}
+/* 用 outline 做脉冲，不和头像描边的 box-shadow 冲突 */
+@keyframes pulse-ring {
+  0% { outline: 3px solid rgb(242 183 5 / 0.9); outline-offset: 0; }
+  100% { outline: 3px solid rgb(242 183 5 / 0); outline-offset: 7px; }
+}
+@keyframes scan {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+@keyframes orbit {
+  to { transform: rotate(360deg); }
+}
+@keyframes halo {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+@keyframes coin-spin {
+  0%, 100% { transform: rotateY(0deg); }
+  50% { transform: rotateY(180deg); }
+}
+.animate-float { animation: float-y 4s ease-in-out infinite; }
+.animate-rise { animation: rise 0.45s ease-out both; }
+.animate-pop { animation: pop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.animate-tumble { animation: tumble 0.6s ease-out; }
+.animate-pulse-ring { animation: pulse-ring 1.6s ease-in-out infinite; }
+.animate-scan { animation: scan 1.6s ease-in-out infinite; }
+.animate-orbit { animation: orbit 18s linear infinite; }
+.animate-orbit-rev { animation: orbit 11s linear infinite reverse; }
+.animate-halo { animation: halo 2.6s ease-in-out infinite; }
+.animate-coin { animation: coin-spin 2.4s ease-in-out infinite; }
+.no-select { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.safe-bottom { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+.safe-top { padding-top: max(0.5rem, env(safe-area-inset-top)); }
