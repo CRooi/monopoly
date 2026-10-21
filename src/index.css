@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
 /* 标题字体随项目打包，按 unicode-range 分片按需加载，不依赖 Google Fonts */
 @import "@fontsource/zcool-kuaile";
 
@@ -9,7 +8,7 @@
 
 @theme inline {
   --font-heading: var(--font-display);
-  --font-sans: 'Geist Variable', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-sans: system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
   --font-display: 'ZCOOL KuaiLe', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --color-ring: var(--ring);
   --color-input: var(--input);
