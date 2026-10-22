@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { ArrowLeftRight, Crown, KeyRound, Lock, UserX, WifiOff } from 'lucide-react'
-import { boardFor, type ClientMessage, type GamePlayer, type GameView, type StateView } from '@shared/types'
+import { ArrowLeftRight, Award, Crown, KeyRound, Lock, UserX, WifiOff } from 'lucide-react'
+import { boardFor, type ClientMessage, type Emote, type GamePlayer, type GameView, type StateView } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
 import { TileMark } from '@/components/art/TileMark'
 import { Buildings } from '@/components/art/icons'
@@ -14,8 +14,11 @@ export function PlayersPanel({
   state,
   onTrade,
   onKick,
+  emotes,
 }: {
   state: StateView
+  /** 每个人头上正在飘的表情 */
+  emotes?: Record<string, Emote>
   /** 和某人发起交易 */
   onTrade?: (id: string) => void
   /** 房主请出玩家（掉线卡住时用） */
@@ -42,6 +45,11 @@ export function PlayersPanel({
                   {p.id === state.me.id && <span className="text-xs text-ink/50">（你）</span>}
                   {p.id === state.room.hostId && <Crown className="size-3.5 shrink-0 text-[#b8860b]" />}
                   {online[p.id] === false && !p.bankrupt && <WifiOff className="size-3.5 shrink-0 text-brick" />}
+                  {emotes?.[p.id] && (
+                    <span key={emotes[p.id]!.id} className="animate-pop shrink-0 rounded-full border border-ink/15 bg-white px-1.5 text-[11px] leading-4 font-semibold whitespace-nowrap shadow-sm">
+                      {emotes[p.id]!.text}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-ink/60">
                   {p.bankrupt ? (
@@ -59,9 +67,11 @@ export function PlayersPanel({
                           <KeyRound className="size-3" /> {p.jailCards}
                         </span>
                       )}
+                      {p.skipTurns > 0 && <span className="text-[#a0522d]">排队中</span>}
                     </>
                   )}
                 </div>
+                <Badges badges={p.badges} />
               </div>
               {!p.bankrupt && <CashTicker value={p.cash} className="text-lg font-semibold text-cash" />}
             </div>
@@ -94,6 +104,20 @@ export function PlayersPanel({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/** 徽章：小小的金色标签 */
+export function Badges({ badges }: { badges?: string[] }) {
+  if (!badges?.length) return null
+  return (
+    <div className="mt-0.5 flex flex-wrap gap-1">
+      {badges.map((b) => (
+        <span key={b} className="flex items-center gap-0.5 rounded-full border border-[#c99400]/50 bg-[#fff3c4] px-1.5 text-[10px] leading-4 font-semibold text-[#8a5d00]">
+          <Award className="size-2.5" /> {b}
+        </span>
+      ))}
     </div>
   )
 }

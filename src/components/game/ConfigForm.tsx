@@ -48,6 +48,18 @@ export function ConfigForm({ value, onChange, disabled }: { value: RoomConfig; o
         <Choice options={ROUND_OPTIONS} value={value.maxRounds} onChange={(v) => set({ maxRounds: v })} label={(v) => (v ? `${v} 轮` : '不限')} disabled={disabled} />
       </Field>
       <label className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-ink/70">房东自己喊收租</span>
+        <Switch checked={value.rentClaim} onCheckedChange={(v) => set({ rentClaim: v })} disabled={disabled} />
+      </label>
+      <label className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-ink/70">没人买的地拍卖</span>
+        <Switch checked={value.auction} onCheckedChange={(v) => set({ auction: v })} disabled={disabled} />
+      </label>
+      <label className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-ink/70">全城事件</span>
+        <Switch checked={value.cityEvents} onCheckedChange={(v) => set({ cityEvents: v })} disabled={disabled} />
+      </label>
+      <label className="flex items-center justify-between gap-3">
         <span className="text-sm font-medium text-ink/70">免费停车奖池</span>
         <Switch checked={value.parkingPot} onCheckedChange={(v) => set({ parkingPot: v })} disabled={disabled} />
       </label>

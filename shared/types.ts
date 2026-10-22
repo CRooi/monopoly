@@ -23,6 +23,8 @@ export type Tile =
   | { kind: 'chance'; name: string }
   | { kind: 'chest'; name: string }
   | { kind: 'tax'; name: string; amount: number }
+  /** 对决：停下的人挑一个对手比骰子点数 */
+  | { kind: 'duel'; name: string }
   /** 地产：国家用 iso 国旗代码，城市用 badge 简称；rent 依次为空地、1~4 栋房子、酒店的租金 */
   | { kind: 'country'; name: string; iso?: string; badge?: string; group: ColorGroup; price: number; house: number; rent: [number, number, number, number, number, number] }
   | { kind: 'airline'; name: string; price: number }
@@ -63,7 +65,7 @@ export const BOARD: Tile[] = [
   country('西班牙', 'ES', 'orange', 200, 100, [16, 80, 220, 600, 800, 1000]),
   { kind: 'parking', name: '免费停车' },
   country('意大利', 'IT', 'red', 220, 150, [18, 90, 250, 700, 875, 1050]),
-  { kind: 'chance', name: '机会' },
+  { kind: 'duel', name: '对决' },
   country('韩国', 'KR', 'red', 220, 150, [18, 90, 250, 700, 875, 1050]),
   country('加拿大', 'CA', 'red', 240, 150, [20, 100, 300, 750, 925, 1100]),
   { kind: 'airline', name: '印度洋航线', price: 200 },
@@ -112,6 +114,22 @@ export interface Theme {
   names: Record<number, { name: string; badge?: string; price?: number }>
   /** 火锅辣度：停在这块别人的地上要摇辣度，租金按辣度翻倍 */
   spicy?: number
+  /** 藏着彩蛋的格子：第一次触发前只提示有彩蛋，不说是什么 */
+  eggs?: Record<number, EggKind>
+}
+
+/** 城市彩蛋 */
+export type EggKind = 'hotpot' | 'slide' | 'wheel' | 'dig' | 'dimsum' | 'milktea' | 'bless'
+
+/** 彩蛋揭晓后的名字和规则，地产卡上展示 */
+export const EGG_INFO: Record<EggKind, { title: string; rule: string }> = {
+  hotpot: { title: '火锅辣度', rule: '停在别人的这块地上要摇辣度，租金 ×1 到 ×3' },
+  slide: { title: '冰面打滑', rule: '停在这里脚下一滑，再往前滑 1 到 3 格' },
+  wheel: { title: '摩天轮', rule: '停在这里坐一圈摩天轮，随机落到一块没人买的地' },
+  dig: { title: '挖到文物', rule: '停在这里挖一铲：挖到宝贝领钱，挖坏了交文物保护费' },
+  dimsum: { title: '早茶局', rule: '停在这里叹早茶：要么大家请你，要么你请大家，每人 $10' },
+  milktea: { title: '奶茶排队', rule: '停在这里排队买奶茶，下回合停一次，奶茶钱银行出，再送 $30' },
+  bless: { title: '天坛祈福', rule: '停在这里祈福，下次掷骰子必出双数' },
 }
 
 /**
@@ -138,6 +156,7 @@ export const THEMES: Record<ThemeId, Theme> = {
     land: '城市',
     transit: '高铁',
     spicy: 39,
+    eggs: { 39: 'hotpot', 14: 'slide', 26: 'wheel', 21: 'dig', 31: 'dimsum', 19: 'milktea', 34: 'bless' },
     names: {
       1: { name: '拉萨', badge: '藏' },
       3: { name: '西宁', badge: '青' },
@@ -252,6 +271,12 @@ export interface RoomConfig {
   parkingPot: boolean
   allowSpectators: boolean
   theme: ThemeId
+  /** 停到别人的地上要房东自己喊收租，过时不候 */
+  rentClaim: boolean
+  /** 放弃购买的地全员拍卖 */
+  auction: boolean
+  /** 从第 2 轮起每轮开局翻一张全城事件 */
+  cityEvents: boolean
 }
 
 export const DEFAULT_CONFIG: RoomConfig = {
@@ -260,6 +285,9 @@ export const DEFAULT_CONFIG: RoomConfig = {
   maxRounds: 0,
   parkingPot: false,
   allowSpectators: true,
+  rentClaim: true,
+  auction: true,
+  cityEvents: true,
 }
 
 export const START_CASH_OPTIONS = [1000, 1500, 2000, 3000]
@@ -278,6 +306,14 @@ export type Phase =
   | 'draw'
   /** 欠款付不起，需要卖房、抵押凑钱或宣告破产 */
   | 'debt'
+  /** 停在别人的地上，等房东自己喊收租，过时不候 */
+  | 'claim'
+  /** 放弃购买的地在全员拍卖 */
+  | 'auction'
+  /** 对决格：挑对手、两人各摇一次 */
+  | 'duel'
+  /** 抽到二选一的卡，等玩家选 */
+  | 'choose'
   /** 本回合的移动结束，可以继续经营，然后结束回合 */
   | 'end'
   | 'over'
@@ -297,6 +333,12 @@ export interface GamePlayer {
   bankrupt: boolean
   /** 破产时的轮次，用于排名 */
   bankruptOrder: number | null
+  /** 还要跳过几回合（长沙奶茶排队） */
+  skipTurns: number
+  /** 下次掷骰子必出双数（北京天坛祈福） */
+  blessed: boolean
+  /** 这一局拿到的徽章 */
+  badges: string[]
 }
 
 export interface Ownership {
@@ -353,6 +395,7 @@ export interface Roll {
 export type EndReason = 'lastStanding' | 'rounds' | 'aborted'
 
 export interface Standing {
+  badges?: string[]
   id: string
   name: string
   avatar: number
@@ -383,16 +426,71 @@ export interface GameView {
   theme: ThemeId
   /** 刚摇出的火锅辣度 */
   spice: { id: number; level: string; mult: number; player: string } | null
-  /** 火锅彩蛋这一局是否已经揭晓过；揭晓前格子上只提示有彩蛋，不说是什么 */
-  spiceSeen: boolean
+  /** 这一局已经揭晓过的彩蛋格子；没揭晓的格子上只提示有彩蛋，不说是什么 */
+  eggsSeen: number[]
+  /** 刚触发的城市彩蛋，大家都看得到 */
+  egg: { id: number; tile: number; kind: EggKind; text: string; player: string } | null
   /** 掷出点数后还要自己走的步数 */
   stepsLeft: number
   card: DrawnCard | null
+  /** 等房东收租：until 之前房东不点「收租」就免租 */
+  rentClaim: { id: number; tile: number; from: string; to: string; amount: number; until: number } | null
+  /** 拍卖：出价后剩余时间至少重置到 AUCTION_BID_MS */
+  auction: { id: number; tile: number; high: { player: string; amount: number } | null; until: number } | null
+  /** 对决：a 是停在对决格的人，b 是挑中的对手 */
+  duel: {
+    id: number
+    a: string
+    b: string | null
+    stake: number
+    rolls: Record<string, [number, number]>
+    until: number
+    winner: string | null
+    done: boolean
+  } | null
+  /** 二选一的卡 */
+  choice: { id: number; deck: 'chance' | 'chest'; key: string; text: string; options: string[] } | null
+  /** 选择题卡里「赌一把」的结果 */
+  gamble: { id: number; dice: [number, number]; win: boolean; text: string } | null
+  /** 本轮的全城事件 */
+  event: { id: number; key: string; title: string; text: string; round: number } | null
+  /** 最近的表情 */
+  emotes: Emote[]
+  /** 生成视图时服务端的时间，前端据此把各种 until 换算成本地倒计时 */
+  now: number
   trades: Trade[]
   pot: number
   log: LogEntry[]
-  result: { reason: EndReason; standings: Standing[] } | null
+  result: { reason: EndReason; standings: Standing[]; highlights: Highlight[] } | null
 }
+
+export interface Emote {
+  id: number
+  from: string
+  /** 对谁发的，null 为对所有人 */
+  to: string | null
+  text: string
+}
+
+export interface Highlight {
+  title: string
+  text: string
+  /** 相关的玩家，用于显示头像 */
+  player?: string
+}
+
+/** 表情：文字短句 */
+export const EMOTES = ['谢谢老板', '我裂开了', '就这？', '稳住', '下次一定', '哈哈哈哈', '求放过', '发财了', '你等着', '抱拳了']
+
+/** 房东喊收租的时限 */
+export const RENT_CLAIM_MS = 6000
+/** 拍卖开始的倒计时，以及每次出价后至少剩多少时间 */
+export const AUCTION_MS = 10000
+export const AUCTION_BID_MS = 5000
+/** 对决：挑对手、摇骰子各自的时限 */
+export const DUEL_PICK_MS = 20000
+export const DUEL_ROLL_MS = 15000
+export const DUEL_STAKE = 100
 
 // ---------- 房间视图 ----------
 
@@ -442,6 +540,12 @@ export type ClientMessage =
   | { type: 'buy' }
   | { type: 'pass' }
   | { type: 'drawCard' }
+  | { type: 'claimRent' }
+  | { type: 'bid'; amount: number }
+  | { type: 'duelPick'; target: string | null }
+  | { type: 'duelRoll' }
+  | { type: 'chooseOption'; index: number }
+  | { type: 'emote'; text: number; to?: string | null }
   | { type: 'endTurn' }
   | { type: 'payBail' }
   | { type: 'useJailCard' }

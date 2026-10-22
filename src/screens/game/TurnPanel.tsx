@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import type { ConfirmRequest } from '@/components/game/ConfirmDialog'
 import { money } from '@/lib/rules'
 import type { SpiceStage } from '@/hooks/useSpiceReveal'
+import { Badges } from './Panels'
+import { AuctionView, ChoiceView, ClaimView, DuelView, EggCard, EventChip, GambleView } from './Specials'
 import { sfx } from '@/lib/sound'
 import { cn } from '@/lib/utils'
 
@@ -277,6 +279,18 @@ export function TurnPanel({
     case 'debt':
       status = '正在凑钱'
       break
+    case 'claim':
+      status = '等房东收租'
+      break
+    case 'auction':
+      status = '拍卖中'
+      break
+    case 'duel':
+      status = '对决中'
+      break
+    case 'choose':
+      status = '做个选择'
+      break
     default:
       status = '经营中'
   }
@@ -291,10 +305,17 @@ export function TurnPanel({
         </div>
         <span className="shrink-0 rounded-full bg-ink/5 px-2 py-0.5 text-[11px] text-ink/60">第 {g.round} 轮</span>
       </div>
+      <EventChip game={g} />
 
       <Dice game={g} />
       <CardView game={g} />
       <SpiceView game={g} spinning={spin} stage={spinStage} />
+      <EggCard game={g} />
+      <GambleView game={g} />
+      {spinStage === null && g.phase === 'claim' && g.rentClaim && <ClaimView game={g} meId={state.me.id} send={send} />}
+      {g.phase === 'auction' && g.auction && <AuctionView game={g} me={me} send={send} />}
+      {g.duel && (g.phase === 'duel' || g.duel.done) && <DuelView game={g} meId={state.me.id} send={send} />}
+      {g.phase === 'choose' && g.choice && <ChoiceView game={g} mine={mine} send={send} />}
       {g.phase === 'draw' && (tile.kind === 'chance' || tile.kind === 'chest') && (
         <CardBack deck={tile.kind} onFlip={mine ? () => send({ type: 'drawCard' }) : undefined} />
       )}
@@ -414,12 +435,26 @@ function Result({ game, onDone }: { game: GameView; onDone?: () => void }) {
           >
             <span className="w-4 text-center text-sm font-semibold text-ink/50">{i + 1}</span>
             <Avatar index={s.avatar} size={28} ring={s.color} className="border-white" />
-            <span className="min-w-0 flex-1 truncate text-left text-sm font-medium">{s.name}</span>
+            <div className="min-w-0 flex-1 text-left">
+              <div className="truncate text-sm font-medium">{s.name}</div>
+              <Badges badges={s.badges} />
+            </div>
             {i === 0 && won && <Crown className="size-4 text-[#b8860b]" />}
             <span className={cn('text-sm tabular-nums', s.bankrupt ? 'text-ink/45' : 'font-semibold text-cash')}>{s.bankrupt ? '破产' : money(s.worth)}</span>
           </div>
         ))}
       </div>
+      {res.highlights.length > 0 && (
+        <div className="w-full space-y-1 border-t border-dashed border-ink/15 pt-2 text-left">
+          <div className="text-xs font-semibold text-ink/55">本局高光</div>
+          {res.highlights.map((h) => (
+            <div key={h.title} className="text-xs leading-snug">
+              <span className="mr-1.5 font-semibold text-brick">{h.title}</span>
+              {h.text}
+            </div>
+          ))}
+        </div>
+      )}
       {onDone && (
         <Button variant="red" size="lg" className="w-full" onClick={onDone}>
           <DoorOpen /> 回到房间

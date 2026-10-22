@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Flag as FlagIcon, LogOut, Power, ScrollText, Tv, Users, Volume2, VolumeX, Wallet, ArrowLeftRight } from 'lucide-react'
+import { Flag as FlagIcon, LogOut, Megaphone, MessageCircle, Power, ScrollText, Tv, Users, Volume2, VolumeX, Wallet, ArrowLeftRight } from 'lucide-react'
 import { toast } from 'sonner'
-import type { ClientMessage, GameView, StateView } from '@shared/types'
+import { EMOTES, type ClientMessage, type GameView, type StateView } from '@shared/types'
 import { Logo } from '@/components/art/icons'
 import { ConfirmDialog, type ConfirmRequest } from '@/components/game/ConfirmDialog'
 import { ConnBadge } from '@/components/game/ConnBadge'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { ConnStatus } from '@/hooks/useRoomSocket'
+import { useEmotes } from '@/hooks/useEmotes'
 import { useSpiceReveal } from '@/hooks/useSpiceReveal'
 import { setMuted, sfx, useMuted } from '@/lib/sound'
 import { cn } from '@/lib/utils'
@@ -77,6 +79,19 @@ export function GameScreen({
 
   useGameSounds(g, state.me.id)
   const muted = useMuted()
+  const emotes = useEmotes(g)
+  const [picking, setPicking] = useState(false)
+
+  // 新一轮翻出全城事件时，所有人都弹一张大卡；进页面时已经翻过的不再弹
+  const eventKey = g.event && g.event.round === g.round ? g.event.id : 0
+  const [eventDone, setEventDone] = useState(eventKey)
+  const eventBanner = eventKey && eventKey !== eventDone ? g.event : null
+  useEffect(() => {
+    if (!eventKey || eventKey === eventDone) return
+    sfx.reveal()
+    const t = setTimeout(() => setEventDone(eventKey), 2800)
+    return () => clearTimeout(t)
+  }, [eventKey, eventDone])
 
   // 轮到自己时弹出提示并响一声（标签页在后台时也能看到标题变化）
   const myTurn = alive && cur.id === me!.id && !over
@@ -119,6 +134,11 @@ export function GameScreen({
         <span className="font-display text-lg">房间 {state.room.code}</span>
         <ConnBadge status={status} className="text-paper/80" />
         <div className="ml-auto flex items-center gap-1">
+          {me && (
+            <Button variant="ghost" size="icon-sm" className="text-paper hover:bg-white/10 hover:text-paper" aria-label="表情" onClick={() => setPicking(true)}>
+              <MessageCircle />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -177,7 +197,7 @@ export function GameScreen({
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:justify-center">
         <div className="mx-auto w-full max-w-[calc(100dvh-5.5rem)] shrink-0 lg:mx-0 lg:w-[min(calc(100dvh-5.5rem),calc(100%-23rem))] lg:max-w-none">
-          <Board game={g} onTileClick={setTile} highlight={g.phase === 'buy' ? cur.pos : null}>
+          <Board game={g} emotes={emotes} onTileClick={setTile} highlight={g.phase === 'buy' ? cur.pos : null}>
             <TurnPanel state={state} spin={reveal.spin} spinStage={reveal.stage} send={send} confirm={setConfirm} onAssets={() => setTab('assets')} onDone={onDone} />
           </Board>
         </div>
@@ -202,6 +222,7 @@ export function GameScreen({
           <div className="min-h-0 flex-1 overflow-y-auto lg:pr-1">
             {tab === 'players' && (
               <PlayersPanel
+                emotes={emotes}
                 state={state}
                 onTrade={setTradeWith}
                 onKick={
@@ -238,6 +259,39 @@ export function GameScreen({
           </div>
         </div>
       )}
+      {eventBanner && (
+        <div key={eventBanner.id} className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-6">
+          <div className="animate-[banner_2.8s_ease-out_both] flex max-w-sm items-center gap-4 rounded-2xl border border-[#b8860b]/60 bg-[#2a1a12] px-6 py-5 shadow-[0_20px_60px_-10px_rgb(0_0_0/0.6)]">
+            <Megaphone className="size-10 shrink-0 text-[#f7e08a]" />
+            <div>
+              <div className="text-xs tracking-widest text-[#f3ead6]/70">第 {eventBanner.round} 轮全城事件</div>
+              <div className="font-display text-3xl text-[#f7e08a]">{eventBanner.title}</div>
+              <div className="text-sm text-[#f3ead6]">{eventBanner.text}</div>
+            </div>
+          </div>
+        </div>
+      )}
+      <Dialog open={picking} onOpenChange={setPicking}>
+        <DialogContent className="panel max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl">说点什么</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-2">
+            {EMOTES.map((e, i) => (
+              <Button
+                key={e}
+                variant="paper"
+                onClick={() => {
+                  send({ type: 'emote', text: i })
+                  setPicking(false)
+                }}
+              >
+                {e}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
       <TileDialog game={g} tile={tile} me={me} send={send} onClose={() => setTile(null)} />
       {me && <TradeDialog game={g} me={me} target={tradeWith} send={send} onClose={() => setTradeWith(null)} />}
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />

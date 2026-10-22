@@ -17,8 +17,8 @@ interface Hold {
   cash: Record<string, number>
   /** 摇辣度之前的最后一条记录 */
   logId: number
-  /** 摇辣度之前彩蛋是否揭晓过；第一次揭晓时，格子上的提示等动画放完再换 */
-  seen: boolean
+  /** 摇辣度之前已经揭晓过的彩蛋；第一次揭晓时，格子上的提示等动画放完再换 */
+  seen: number[]
 }
 
 /**
@@ -42,7 +42,7 @@ export function useSpiceReveal<G extends GameView | null>(
         id: g.spice.id,
         cash: Object.fromEntries(prev.players.map((p) => [p.id, p.cash])),
         logId: prev.log.at(-1)?.id ?? 0,
-        seen: prev.spiceSeen,
+        seen: prev.eggsSeen,
       })
       setSpin(0)
       setStage('spin')
@@ -92,7 +92,7 @@ export function useSpiceReveal<G extends GameView | null>(
       ...g,
       players: g.players.map((p) => ({ ...p, cash: hold.cash[p.id] ?? p.cash })),
       log: g.log.filter((l) => l.id <= hold.logId),
-      spiceSeen: hold.seen,
+      eggsSeen: hold.seen,
       // 付不起进了欠款，也等揭晓之后再显示
       debt: null,
       phase: g.phase === 'debt' ? 'end' : g.phase,

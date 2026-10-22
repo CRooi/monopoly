@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import type { StateView } from '@shared/types'
+import { useEmotes } from '@/hooks/useEmotes'
 import { useSpiceReveal } from '@/hooks/useSpiceReveal'
 import { cn } from '@/lib/utils'
 import { Board } from './Board'
@@ -26,6 +27,7 @@ export function WatchView({
   const reveal = useSpiceReveal(live.game, !!isLive)
   const state = { ...live, game: reveal.game }
   const g = state.game
+  const emotes = useEmotes(g)
   const [tab, setTab] = useState<'players' | 'log' | 'extra'>(extraTab ? 'extra' : 'players')
   const [tile, setTile] = useState<number | null>(null)
   if (!g) return <div className="py-20 text-center font-display text-paper">还没有开始对局</div>
@@ -37,7 +39,7 @@ export function WatchView({
   return (
     <div className={cn('flex h-full min-h-0 flex-col gap-4 lg:flex-row', className)}>
       <div className="mx-auto aspect-square h-auto w-full max-w-[min(100%,calc(100dvh-8rem))] shrink-0 lg:mx-0 lg:h-full lg:w-auto lg:max-w-[calc(100%-22rem)]">
-        <Board game={g} onTileClick={setTile} quiet={!isLive}>
+        <Board game={g} emotes={emotes} onTileClick={setTile} quiet={!isLive}>
           <TurnPanel state={state} spin={reveal.spin} spinStage={reveal.stage} send={noop} confirm={noop} onAssets={noop} />
         </Board>
       </div>
@@ -54,7 +56,7 @@ export function WatchView({
           ))}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          {tab === 'players' && <PlayersPanel state={state} />}
+          {tab === 'players' && <PlayersPanel state={state} emotes={emotes} />}
           {tab === 'log' && <LogPanel game={g} />}
           {tab === 'extra' && extraTab?.content}
         </div>

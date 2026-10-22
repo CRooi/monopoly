@@ -3,6 +3,7 @@ import {
   boardFor,
   themeOf,
   SPICE_LEVELS,
+  EGG_INFO,
   GROUP_COLOR,
   UTILITY_MULT,
   isBuyable,
@@ -13,6 +14,7 @@ import {
 } from '@shared/types'
 import { Flame } from 'lucide-react'
 import { Avatar } from '@/components/art/Avatar'
+import { EggMark } from '@/components/game/EggMark'
 import { TileMark } from '@/components/art/TileMark'
 import { Buildings, EasterEgg, PrizeRays } from '@/components/art/icons'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -45,6 +47,8 @@ export function TileDialog({
 }) {
   const board = boardFor(game.theme)
   const t = tile === null ? null : board[tile]!
+  const egg = tile === null ? undefined : themeOf(game.theme).eggs?.[tile]
+  const eggSeen = tile !== null && game.eggsSeen.includes(tile)
   const own = tile === null ? undefined : game.owners[tile]
   const owner = own ? game.players.find((p) => p.id === own.owner) : undefined
   const buyable = t && isBuyable(t)
@@ -83,14 +87,14 @@ export function TileDialog({
                   </>
                 )}
                 {t.kind === 'airline' &&
-                  AIRLINE_RENT.map((r, i) => <Row key={i} label={`拥有 ${i + 1} 条航线`} value={money(r)} active={ownedCount('airline') === i + 1} />)}
+                  AIRLINE_RENT.map((r, i) => <Row key={i} label={`拥有 ${i + 1} 条${themeOf(game.theme).transit}`} value={money(r)} active={ownedCount('airline') === i + 1} />)}
                 {t.kind === 'utility' &&
                   UTILITY_MULT.map((m, i) => <Row key={i} label={`拥有 ${i + 1} 家`} value={`点数 × ${m}`} active={ownedCount('utility') === i + 1} />)}
                 <Row label="抵押" value={money(mortgageValue(t))} />
               </div>
             )}
 
-            {tile === themeOf(game.theme).spicy && !game.spiceSeen && (
+            {egg && !eggSeen && (
               <div className="relative mx-3 flex items-center gap-3 overflow-hidden rounded-lg border border-[#b8860b]/60 bg-[#2a1a12] px-3 py-3 shadow-[inset_0_0_0_1px_rgb(247_224_138/0.15)]">
                 <span className="relative flex size-12 shrink-0 items-center justify-center">
                   <PrizeRays className="absolute inset-[-40%] opacity-70" />
@@ -106,7 +110,7 @@ export function TileDialog({
               </div>
             )}
 
-            {tile === themeOf(game.theme).spicy && game.spiceSeen && (
+            {egg === 'hotpot' && eggSeen && (
               <div className="mx-3 space-y-0.5 rounded-lg border border-[#f5a08a] bg-[#fff0eb] px-2 py-1.5">
                 <div className="flex items-center gap-1 px-1 pb-0.5 text-xs font-semibold text-brick">
                   <Flame className="size-3.5 fill-[#ff6b35]" /> 火锅辣度
@@ -117,6 +121,16 @@ export function TileDialog({
                     <span className="shrink-0 tabular-nums">租金 ×{s.mult}</span>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {egg && egg !== 'hotpot' && eggSeen && (
+              <div className="mx-3 flex items-center gap-2.5 rounded-lg border border-ink/10 bg-paper px-3 py-2">
+                <EggMark kind={egg} className="size-8 shrink-0" iconClassName="size-5" />
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold">{EGG_INFO[egg].title}</div>
+                  <div className="text-xs text-ink/70">{EGG_INFO[egg].rule}</div>
+                </div>
               </div>
             )}
 

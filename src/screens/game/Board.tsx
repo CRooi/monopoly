@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { CircleParking, Droplets, Flame, Gem, Plane, Receipt, Siren, TrainFront, Zap } from 'lucide-react'
-import { BOARD, GROUP_COLOR, boardFor, themeOf, JAIL_POS, type GamePlayer, type GameView, type Ownership, type Tile } from '@shared/types'
+import { CircleParking, Droplets, Gem, Plane, Receipt, Siren, Swords, TrainFront, Zap } from 'lucide-react'
+import { BOARD, GROUP_COLOR, boardFor, themeOf, JAIL_POS, type EggKind, type Emote, type GamePlayer, type GameView, type Ownership, type Tile } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
 import { CityBadge } from '@/components/art/CityBadge'
 import { CityIcon } from '@/components/art/CityIcon'
 import { Flag } from '@/components/art/Flag'
 import { Buildings, ChanceMark, Chest, EasterEgg, GoArrow, JailBars, PrizeRays } from '@/components/art/icons'
 import { DeltaPop } from '@/components/game/CashTicker'
+import { EggMark } from '@/components/game/EggMark'
 import { sfx } from '@/lib/sound'
 import { cn } from '@/lib/utils'
 
@@ -94,6 +95,13 @@ function TileFace({ tile, side, pot }: { tile: Tile; side: Side; pot: number }) 
           {pot > 0 && <span className="rounded-full bg-cash px-[0.8cqw] text-[1.5cqw] text-white">${pot}</span>}
         </div>
       )
+    case 'duel':
+      return wrap(
+        <>
+          {icon(<Swords className="text-brick" />)}
+          {label}
+        </>,
+      )
     case 'gotojail':
       return (
         <div className="flex size-full flex-col items-center justify-center gap-[0.5cqw] bg-[#fff3d6]">
@@ -178,8 +186,8 @@ function TileCell({
 }: {
   index: number
   tile: Tile
-  /** 这一格藏着彩蛋（重庆火锅）：没揭晓时角上一颗金箔彩蛋，揭晓后换成火苗 */
-  special?: 'hidden' | 'revealed'
+  /** 这一格藏着城市彩蛋：没揭晓时角上一颗金箔彩蛋，揭晓后换成这个彩蛋的图标 */
+  special?: { kind: EggKind; seen: boolean }
   own?: Ownership
   ownerColor?: string
   pot: number
@@ -220,12 +228,14 @@ function TileCell({
         </div>
       )}
       <TileFace tile={tile} side={side} pot={pot} />
-      {special === 'revealed' && (
-        <span className="pointer-events-none absolute top-[0.4cqw] right-[0.4cqw] z-10 flex size-[2.6cqw] items-center justify-center rounded-full bg-[#fff0eb] shadow-[0_0_0.8cqw_rgb(255_107_53/0.8)] animate-[heartbeat_1.6s_ease-in-out_infinite]">
-          <Flame className="size-[1.9cqw] fill-[#ff6b35] text-[#d63c2f]" />
-        </span>
+      {special?.seen && (
+        <EggMark
+          kind={special.kind}
+          className="pointer-events-none absolute top-[0.4cqw] right-[0.4cqw] z-10 size-[2.6cqw] shadow-[0_0_0.6cqw_rgb(0_0_0/0.25)]"
+          iconClassName="size-[1.9cqw]"
+        />
       )}
-      {special === 'hidden' && (
+      {special && !special.seen && (
         <>
           {/* 彩蛋还没揭晓：角上一颗金箔巧克力蛋，背后的金光慢慢转 */}
           <span className="pointer-events-none absolute top-[0.2cqw] right-[0.2cqw] z-10 flex size-[3.6cqw] items-center justify-center">
@@ -315,10 +325,13 @@ export function Board({
   children,
   className,
   quiet,
+  emotes,
 }: {
   game: GameView
   /** 不播放走棋的声音（回放时） */
   quiet?: boolean
+  /** 每个人头上正在飘的表情 */
+  emotes?: Record<string, Emote>
   onTileClick?: (i: number) => void
   /** 需要突出显示的格子 */
   highlight?: number | null
@@ -328,6 +341,7 @@ export function Board({
 }) {
   const shown = useAnimatedPositions(game.players, !quiet)
   const colorOf = Object.fromEntries(game.players.map((p) => [p.id, p.color]))
+  const eggs = themeOf(game.theme).eggs ?? {}
   const current = game.players[game.turn]
 
   // 同一格的棋子错开摆放；在监狱里的放进铁栏，探监的放在边上
@@ -353,7 +367,7 @@ export function Board({
             key={i}
             index={i}
             tile={tile}
-            special={themeOf(game.theme).spicy === i ? (game.spiceSeen ? 'revealed' : 'hidden') : undefined}
+            special={eggs[i] ? { kind: eggs[i]!, seen: game.eggsSeen.includes(i) } : undefined}
             own={game.owners[i]}
             ownerColor={game.owners[i] ? colorOf[game.owners[i]!.owner] : undefined}
             pot={game.pot}
@@ -406,6 +420,14 @@ export function Board({
                 style={{ width: `${size}cqw`, height: `${size}cqw` }}
               />
               <DeltaPop value={p.cash} className="-top-[6.5cqw] text-[1.9cqw]" />
+              {emotes?.[p.id] && (
+                <span
+                  key={emotes[p.id]!.id}
+                  className="animate-pop absolute bottom-[3cqw] left-1/2 z-40 -translate-x-1/2 rounded-[1cqw] border border-ink/15 bg-white px-[1cqw] py-[0.4cqw] text-[1.8cqw] font-semibold whitespace-nowrap shadow-[0_0.4cqw_1cqw_rgb(0_0_0/0.25)] after:absolute after:top-full after:left-1/2 after:-translate-x-1/2 after:border-[0.6cqw] after:border-transparent after:border-t-white after:content-['']"
+                >
+                  {emotes[p.id]!.text}
+                </span>
+              )}
             </div>
           )
         })

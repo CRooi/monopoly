@@ -1,6 +1,13 @@
 import {
   AIRLINE_RENT,
+  AUCTION_BID_MS,
+  AUCTION_MS,
   BAIL,
+  DUEL_PICK_MS,
+  DUEL_ROLL_MS,
+  DUEL_STAKE,
+  EMOTES,
+  RENT_CLAIM_MS,
   SHAKE_EXTEND_MS,
   SHAKE_MS,
   BOARD,
@@ -26,6 +33,7 @@ import {
   type BuyableTile,
   type ClientMessage,
   type DrawnCard,
+  type EggKind,
   type EndReason,
   type GamePlayer,
   type GameView,
@@ -63,7 +71,20 @@ export interface User {
 }
 
 /** 对局的完整状态：比发给客户端的视图多出牌堆顺序和内部计数 */
-export interface GameState extends Omit<GameView, 'shakeMs'> {
+/** 每个人这一局的统计，结算时挑高光 */
+export interface Stats {
+  rentPaid: number
+  rentGot: number
+  jail: number
+  doubles: number
+  /** 触发过的彩蛋格子 */
+  eggs: number[]
+}
+
+export interface GameState extends Omit<GameView, 'shakeMs' | 'now'> {
+  stats: Record<string, Stats>
+  /** 这一局最贵的一笔租金 */
+  topRent: { payer: string; owner: string; tile: number; amount: number } | null
   /** 骰子摇到什么时候停（时间戳），没在摇为 null */
   shakeUntil: number | null
   /** 上一次延长摇骰的时间，每过 SHAKE_EXTEND_MS 才能再延长一次 */
@@ -120,6 +141,9 @@ export function validateConfig(c: Partial<RoomConfig> | undefined): RoomConfig {
     parkingPot: !!v.parkingPot,
     allowSpectators: !!v.allowSpectators,
     theme: THEME_OPTIONS.includes(v.theme) ? v.theme : DEFAULT_CONFIG.theme,
+    rentClaim: v.rentClaim !== false,
+    auction: v.auction !== false,
+    cityEvents: v.cityEvents !== false,
   }
 }
 
@@ -151,6 +175,8 @@ const CHANCE: Card[] = [
   { text: '超速罚款 $15', act: (r) => r.charge(15, [], '超速罚款') },
   { text: '当选董事长，付给每位玩家 $50', act: (r) => r.payEachPlayer(50) },
   { text: '建筑贷款到期，领取 $150', act: (r) => r.receive(150) },
+  { text: '领 $100，还是赌一把？', act: (r) => r.offerChoice('chance', 'cash-or-gamble', '领 $100，还是赌一把？', ['领 $100', '赌一把：掷出双数领 $300']) },
+  { text: '超速被拍，交 $50 罚款，还是赌一把？', act: (r) => r.offerChoice('chance', 'fine-or-gamble', '超速被拍，交 $50 罚款，还是赌一把？', ['交 $50', '赌一把：8 点以上免罚，否则交 $150']) },
 ]
 
 const CHEST: Card[] = [
@@ -170,6 +196,19 @@ const CHEST: Card[] = [
   { text: '街道维修：每栋房子付 $40，每家酒店付 $115', act: (r) => r.repairs(40, 115) },
   { text: '选美比赛二等奖，领取 $10', act: (r) => r.receive(10) },
   { text: '继承遗产，领取 $100', act: (r) => r.receive(100) },
+  { text: '前进 3 格，还是后退 3 格？', act: (r) => r.offerChoice('chest', 'step', '前进 3 格，还是后退 3 格？', ['前进 3 格', '后退 3 格']) },
+]
+
+/** 全城事件：从第 2 轮起每轮开局翻一张，影响整轮 */
+const CITY_EVENTS = [
+  { key: 'cooldown', title: '楼市降温', text: '本轮所有租金减半' },
+  { key: 'boom', title: '楼市火爆', text: '本轮所有租金 ×1.5' },
+  { key: 'inflation', title: '通货膨胀', text: '本轮经过起点领 $300' },
+  { key: 'redpacket', title: '全民红包', text: '每人领 $100' },
+  { key: 'typhoon', title: '台风过境', text: '每家拆掉一栋房子，按半价赔偿' },
+  { key: 'speedup', title: '交通提速', text: '本轮{transit}租金翻倍' },
+  { key: 'taxday', title: '交税日', text: '每人交现金的 10%' },
+  { key: 'calm', title: '风平浪静', text: '什么也没发生' },
 ]
 
 const DECKS = { chance: CHANCE, chest: CHEST }
@@ -185,13 +224,45 @@ export class Room {
    * 由传输层包一层：记录对局事件、保存、推送；默认直接执行（测试用）
    */
   runAsync: (actor: string, msg: ClientMessage, fn: () => void) => void = (_a, _m, fn) => fn()
-  private shakeTimer: ReturnType<typeof setTimeout> | null = null
+  /** 各种倒计时：摇骰子、等房东收租、拍卖、对决 */
+  private timers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** 每个人上次发表情的时间，防刷屏 */
+  private lastEmote = new Map<string, number>()
 
   constructor(public d: RoomData) {
-    // 兼容加主题之前保存的房间
+    // 兼容旧版本保存的房间
     d.config.theme ??= 'world'
-    // 重启前骰子正在摇：接着计时，到点（或已经过点）就出点数
-    if (d.game?.shakeUntil) this.armShake()
+    d.config.rentClaim ??= true
+    d.config.auction ??= true
+    d.config.cityEvents ??= true
+    // 重启前正在计时的事接着计时，到点（或已经过点）就照常处理
+    const g = d.game
+    if (g && g.phase !== 'over') {
+      if (g.shakeUntil) this.armShake()
+      if (g.rentClaim) this.arm('claim', g.rentClaim.until, () => this.expireClaim())
+      if (g.auction) this.arm('auction', g.auction.until, () => this.finishAuction())
+      if (g.duel && !g.duel.done) this.arm('duel', g.duel.until, () => this.duelTimeout())
+    }
+  }
+
+  /** 到点后执行；由传输层包一层，记录、保存、推送 */
+  private arm(key: string, until: number, fn: () => void) {
+    this.disarm(key)
+    this.timers.set(
+      key,
+      setTimeout(() => {
+        this.timers.delete(key)
+        const g = this.d.game
+        if (!g || g.phase === 'over') return
+        this.runAsync(this.cur().id, { type: 'ping' }, fn)
+      }, Math.max(0, until - Date.now())),
+    )
+  }
+
+  private disarm(key: string) {
+    const t = this.timers.get(key)
+    if (t) clearTimeout(t)
+    this.timers.delete(key)
   }
 
   /** 当前对局的主题；开局前按房间设置 */
@@ -214,8 +285,8 @@ export class Room {
 
   /** 房间关闭时清掉计时器 */
   dispose() {
-    if (this.shakeTimer) clearTimeout(this.shakeTimer)
-    this.shakeTimer = null
+    for (const t of this.timers.values()) clearTimeout(t)
+    this.timers.clear()
   }
 
   static create(code: string, config: Partial<RoomConfig> | undefined, hostName: unknown, avatar?: unknown): { room: Room; user: User } {
@@ -352,6 +423,11 @@ export class Room {
     if (!g || g.phase === 'over') fail('游戏还没开始')
     const me = g!.players.find((p) => p.id === userId)
     if (!me) fail('观战者不能操作')
+    // 表情：破产了也能发
+    if (msg.type === 'emote') {
+      this.emote(me!, msg.text, msg.to ?? null)
+      return {}
+    }
     if (me!.bankrupt) fail('你已经破产了')
     const mine = this.cur().id === userId
 
@@ -371,6 +447,16 @@ export class Room {
       case 'bankrupt':
         // 欠债时破产，资产归债主；其他时候认输，资产归还银行
         this.goBankrupt(me!, mine && g!.phase === 'debt' ? g!.debt!.to : [], `${me!.name} 认输`)
+        return {}
+      // 收租由房东喊，出价、对决摇骰子也不限于当前玩家
+      case 'claimRent':
+        this.claimRent(me!)
+        return {}
+      case 'bid':
+        this.bid(me!, msg.amount)
+        return {}
+      case 'duelRoll':
+        this.duelRoll(me!)
         return {}
     }
 
@@ -392,8 +478,18 @@ export class Room {
       case 'pass':
         if (g!.phase !== 'buy') fail('现在不能这样做')
         this.log(`${me!.name} 放弃购买 ${this.tileName(me!.pos)}`, me!.id)
+        if (this.d.config.auction) {
+          this.startAuction(me!.pos)
+          break
+        }
         g!.phase = 'end'
         this.afterMove()
+        break
+      case 'duelPick':
+        this.duelPick(me!, msg.target)
+        break
+      case 'chooseOption':
+        this.chooseOption(msg.index)
         break
       case 'drawCard': {
         if (g!.phase !== 'draw') fail('现在不能抽卡')
@@ -464,6 +560,9 @@ export class Room {
       jailCards: 0,
       bankrupt: false,
       bankruptOrder: null,
+      skipTurns: 0,
+      blessed: false,
+      badges: [],
     }))
     this.d.game = {
       id: crypto.randomUUID(),
@@ -479,7 +578,17 @@ export class Room {
       lastRoll: null,
       theme: this.d.config.theme,
       spice: null,
-      spiceSeen: false,
+      eggsSeen: [],
+      egg: null,
+      rentClaim: null,
+      auction: null,
+      duel: null,
+      choice: null,
+      gamble: null,
+      event: null,
+      emotes: [],
+      stats: Object.fromEntries(players.map((p) => [p.id, { rentPaid: 0, rentGot: 0, jail: 0, doubles: 0, eggs: [] }])),
+      topRent: null,
       shakeUntil: null,
       shakeExtendedAt: 0,
       shakeTaps: 0,
@@ -528,11 +637,16 @@ export class Room {
     if (g.phase !== 'roll') fail(g.phase === 'buy' ? '请先决定是否购买' : g.phase === 'draw' ? '请先抽卡' : g.phase === 'debt' ? '请先还清欠款' : '这回合已经掷过了')
     const p = this.cur()
     const dice: [number, number] = [this.die(), this.die()]
+    // 北京天坛祈福：这一掷必出双数
+    if (p.blessed) {
+      dice[1] = dice[0]
+      p.blessed = false
+      this.log(`天坛祈福灵验了，${p.name} 掷出双数`, p.id)
+    }
     const sum = dice[0] + dice[1]
     const isDouble = dice[0] === dice[1]
     g.lastRoll = { id: ++g.seq, dice, player: p.id }
-    g.card = null
-    g.spice = null
+    this.clearDisplays()
     g.phase = 'end'
 
     if (p.inJail) {
@@ -561,6 +675,9 @@ export class Room {
 
     if (isDouble) {
       g.doubles++
+      const st = this.stats(p)
+      st.doubles++
+      if (st.doubles >= 5) this.award(p, '双数达人')
       if (g.doubles >= 3) {
         this.log(`${p.name} 连续三次掷出双数，超速入狱`, p.id)
         this.sendToJail()
@@ -587,8 +704,7 @@ export class Room {
     if (!g.shakeUntil) {
       g.shakeUntil = now + SHAKE_MS
       g.shakeExtendedAt = now
-      g.card = null
-      g.spice = null
+      this.clearDisplays()
     } else if (now - g.shakeExtendedAt >= SHAKE_EXTEND_MS) {
       g.shakeUntil += SHAKE_EXTEND_MS
       g.shakeExtendedAt = now
@@ -597,15 +713,11 @@ export class Room {
   }
 
   private armShake() {
-    if (this.shakeTimer) clearTimeout(this.shakeTimer)
     const until = this.d.game?.shakeUntil
-    if (!until) return
-    this.shakeTimer = setTimeout(() => {
-      this.shakeTimer = null
-      const g = this.d.game
-      if (!g?.shakeUntil || g.phase !== 'roll') return
-      this.runAsync(this.cur().id, { type: 'roll' }, () => this.stopShake())
-    }, Math.max(0, until - Date.now()))
+    if (!until) return this.disarm('shake')
+    this.arm('shake', until, () => {
+      if (this.g.phase === 'roll') this.stopShake()
+    })
   }
 
   /** 骰子停下，出点数 */
@@ -618,8 +730,7 @@ export class Room {
 
   private clearShake() {
     if (this.d.game) this.d.game.shakeUntil = null
-    if (this.shakeTimer) clearTimeout(this.shakeTimer)
-    this.shakeTimer = null
+    this.disarm('shake')
   }
 
   // ---------------- 自己走 ----------------
@@ -647,27 +758,41 @@ export class Room {
   /** 一次移动的结算结束：没有待决定的事就进入下一步 */
   private afterMove() {
     const g = this.g
-    if (g.phase === 'buy' || g.phase === 'draw' || g.phase === 'move' || g.phase === 'debt' || g.phase === 'over') return
+    if (g.phase !== 'end') return
     g.phase = g.again ? 'roll' : 'end'
   }
 
   private nextTurn() {
     const g = this.g
-    const from = g.turn
-    let i = from
-    for (let k = 0; k < g.players.length; k++) {
-      i = (i + 1) % g.players.length
-      if (!g.players[i]!.bankrupt) break
+    const n = g.players.length
+    let i = g.turn
+    let wrapped = false
+    // 跳过破产的人；在排队买奶茶的人跳过一回合
+    for (let k = 0; k < n * 3; k++) {
+      const prev = i
+      i = (i + 1) % n
+      if (i <= prev) wrapped = true
+      const p = g.players[i]!
+      if (p.bankrupt) continue
+      if (p.skipTurns > 0 && g.players.filter((x) => !x.bankrupt).length > 1) {
+        p.skipTurns--
+        this.log(`${p.name} 还在排队买奶茶，这回合歇着`, p.id)
+        continue
+      }
+      break
     }
-    if (i <= from) {
+    this.clearShake()
+    this.clearPending()
+    if (wrapped) {
       g.round++
       const max = this.d.config.maxRounds
       if (max > 0 && g.round > max) {
         this.log(`已经进行了 ${max} 轮，按总资产排名`)
         return this.gameOver('rounds')
       }
+      g.event = null
+      if (this.d.config.cityEvents && g.round >= 2) this.drawEvent()
     }
-    this.clearShake()
     g.turn = i
     g.phase = 'roll'
     g.stepsLeft = 0
@@ -679,11 +804,34 @@ export class Room {
     this.log(`轮到 ${p.name}${p.inJail ? '（在监狱中）' : ''}`, p.id)
   }
 
+  /** 换人时清掉还没处理完的收租、拍卖、对决、选择题 */
+  private clearPending() {
+    const g = this.g
+    g.rentClaim = null
+    g.auction = null
+    g.choice = null
+    if (g.duel && !g.duel.done) g.duel = null
+    this.disarm('claim')
+    this.disarm('auction')
+    this.disarm('duel')
+  }
+
+  /** 新一掷开始时，收起上一掷留下的卡片、辣度、彩蛋、对决结果 */
+  private clearDisplays() {
+    const g = this.g
+    g.card = null
+    g.spice = null
+    g.egg = null
+    g.gamble = null
+    if (g.duel?.done) g.duel = null
+  }
+
   // ---------------- 移动 ----------------
 
   private passGo(p: GamePlayer) {
-    p.cash += GO_SALARY
-    this.log(`${p.name} 经过起点，领取 ${money(GO_SALARY)}`, p.id)
+    const salary = this.g.event?.key === 'inflation' ? 300 : GO_SALARY
+    p.cash += salary
+    this.log(`${p.name} 经过起点，领取 ${money(salary)}`, p.id)
   }
 
   /** 前进到指定格子（经过起点领工资） */
@@ -716,6 +864,9 @@ export class Room {
     this.g.again = false
     this.g.doubles = 0
     this.log(`${p.name} 进了监狱`, p.id)
+    const st = this.stats(p)
+    st.jail++
+    if (st.jail >= 3) this.award(p, '坐牢专业户')
   }
 
   private release(p: GamePlayer) {
@@ -728,6 +879,12 @@ export class Room {
     const g = this.g
     const p = this.cur()
     const t = this.board[p.pos]!
+    // 城市彩蛋：打滑、摩天轮会把人带走；其他的触发后照常结算这一格
+    const egg = this.theme.eggs?.[p.pos]
+    if (egg && egg !== 'hotpot') {
+      if (this.triggerEgg(egg, p.pos)) return
+      if (g.phase === 'over' || p.bankrupt) return
+    }
     switch (t.kind) {
       case 'go':
       case 'jail':
@@ -752,6 +909,8 @@ export class Room {
         g.phase = 'draw'
         this.log(`${p.name} 来到${t.name}`, p.id)
         return
+      case 'duel':
+        return this.startDuel()
     }
     const own = g.owners[p.pos]
     if (!own) {
@@ -766,19 +925,435 @@ export class Room {
       return
     }
     let rent = this.rentOf(p.pos, mods)
-    // 重庆火锅：先摇辣度，租金按辣度翻倍
-    if (this.theme.spicy === p.pos) {
+    // 重庆火锅：先摇辣度，租金按辣度翻倍；火锅钱房东不用喊，必须付
+    if (egg === 'hotpot') {
       const s = this.spice()
       g.spice = { id: ++g.seq, level: s.level, mult: s.mult, player: p.id }
-      g.spiceSeen = true
+      this.seeEgg(p, p.pos)
       rent = Math.round(rent * s.mult)
       this.log(`${t.name}火锅辣度：${s.level}${s.mult !== 1 ? `，租金 ×${s.mult}` : ''}`, p.id)
+      if (s === SPICE_LEVELS.at(-1)) this.award(p, '火锅勇士')
+    } else if (this.d.config.rentClaim) {
+      // 房东自己喊收租，过时不候
+      const until = Date.now() + RENT_CLAIM_MS
+      g.rentClaim = { id: ++g.seq, tile: p.pos, from: p.id, to: owner.id, amount: rent, until }
+      g.phase = 'claim'
+      this.log(`${p.name} 来到 ${owner.name} 的 ${t.name}，就看房东喊不喊收租了`, p.id)
+      this.arm('claim', until, () => this.expireClaim())
+      return
     }
     this.log(`${p.name} 来到 ${owner.name} 的 ${t.name}，付租金 ${money(rent)}`, p.id)
-    this.charge(rent, [owner.id], `${t.name} 的租金`)
+    this.payRent(owner, rent, p.pos)
   }
 
-  private spice() {
+  /** 当前玩家付租金给房东，并记进统计 */
+  private payRent(owner: GamePlayer, rent: number, tile: number) {
+    const g = this.g
+    const p = this.cur()
+    this.stats(p).rentPaid += rent
+    this.stats(owner).rentGot += rent
+    if (!g.topRent || rent > g.topRent.amount) g.topRent = { payer: p.id, owner: owner.id, tile, amount: rent }
+    this.charge(rent, [owner.id], `${this.tileName(tile)} 的租金`)
+  }
+
+  // ---------------- 房东收租 ----------------
+
+  private claimRent(me: GamePlayer) {
+    const g = this.g
+    const c = g.rentClaim
+    if (g.phase !== 'claim' || !c || c.to !== me.id) fail('现在没有租可收')
+    this.disarm('claim')
+    g.rentClaim = null
+    g.phase = 'end'
+    const payer = this.player(c!.from)
+    this.log(`${me.name} 喊了一声收租！${payer.name} 付租金 ${money(c!.amount)}`, me.id)
+    this.payRent(me, c!.amount, c!.tile)
+    this.afterMove()
+  }
+
+  /** 房东没在时限内喊收租：白住 */
+  private expireClaim() {
+    const g = this.g
+    const c = g.rentClaim
+    if (!c || g.phase !== 'claim') return
+    g.rentClaim = null
+    g.phase = 'end'
+    this.log(`${this.player(c.to).name} 没注意，${this.player(c.from).name} 白住了一回`, c.from)
+    this.afterMove()
+  }
+
+  // ---------------- 拍卖 ----------------
+
+  private startAuction(tile: number) {
+    const g = this.g
+    const until = Date.now() + AUCTION_MS
+    g.auction = { id: ++g.seq, tile, high: null, until }
+    g.phase = 'auction'
+    this.log(`${this.tileName(tile)} 开始拍卖，起拍 $10`)
+    this.arm('auction', until, () => this.finishAuction())
+  }
+
+  private bid(me: GamePlayer, amount: number) {
+    const g = this.g
+    const a = g.auction
+    if (g.phase !== 'auction' || !a) fail('现在没有拍卖')
+    const n = Math.floor(Number(amount))
+    const min = a!.high ? a!.high.amount + 10 : 10
+    if (!Number.isFinite(n) || n < min) fail(`出价至少 ${money(min)}`)
+    if (n > me.cash) fail('现金不够')
+    a!.high = { player: me.id, amount: n }
+    a!.until = Math.max(a!.until, Date.now() + AUCTION_BID_MS)
+    this.log(`${me.name} 出价 ${money(n)}`, me.id)
+    this.arm('auction', a!.until, () => this.finishAuction())
+  }
+
+  private finishAuction() {
+    const g = this.g
+    const a = g.auction
+    if (!a || g.phase !== 'auction') return
+    this.disarm('auction')
+    g.auction = null
+    const name = this.tileName(a.tile)
+    const w = a.high ? this.player(a.high.player) : null
+    if (a.high && w && !w.bankrupt && w.cash >= a.high.amount && !g.owners[a.tile]) {
+      w.cash -= a.high.amount
+      g.owners[a.tile] = { owner: w.id, houses: 0, mortgaged: false }
+      this.log(`${w.name} 以 ${money(a.high.amount)} 拍下 ${name}`, w.id)
+      this.firstLandlord(w)
+    } else {
+      this.log(`${name} 没人出价，流拍`)
+    }
+    g.phase = 'end'
+    this.afterMove()
+  }
+
+  // ---------------- 对决 ----------------
+
+  private startDuel() {
+    const g = this.g
+    const p = this.cur()
+    if (!this.others().length) return
+    const until = Date.now() + DUEL_PICK_MS
+    g.duel = { id: ++g.seq, a: p.id, b: null, stake: DUEL_STAKE, rolls: {}, until, winner: null, done: false }
+    g.phase = 'duel'
+    this.log(`${p.name} 来到对决格，挑一个对手比骰子`, p.id)
+    this.arm('duel', until, () => this.duelTimeout())
+  }
+
+  private duelPick(me: GamePlayer, target: string | null) {
+    const g = this.g
+    const d = g.duel
+    if (g.phase !== 'duel' || !d || d.b) fail('现在不能挑对手')
+    if (target === null) {
+      this.disarm('duel')
+      g.duel = null
+      this.log(`${me.name} 不想比了`, me.id)
+      g.phase = 'end'
+      return this.afterMove()
+    }
+    const o = g.players.find((x) => x.id === target && !x.bankrupt && x.id !== me.id)
+    if (!o) fail('对手无效')
+    d!.b = o!.id
+    d!.until = Date.now() + DUEL_ROLL_MS
+    this.log(`${me.name} 向 ${o!.name} 发起对决，赌注 ${money(d!.stake)}`, me.id)
+    this.arm('duel', d!.until, () => this.duelTimeout())
+  }
+
+  private duelRoll(me: GamePlayer) {
+    const g = this.g
+    const d = g.duel
+    if (g.phase !== 'duel' || !d || !d.b || d.done) fail('现在没有对决')
+    if (me.id !== d!.a && me.id !== d!.b) fail('这场对决没有你')
+    if (d!.rolls[me.id]) fail('你已经摇过了')
+    this.duelThrow(me)
+    if (d!.rolls[d!.a] && d!.rolls[d!.b!]) this.resolveDuel()
+  }
+
+  private duelThrow(p: GamePlayer, auto = false) {
+    const dice: [number, number] = [this.die(), this.die()]
+    this.g.duel!.rolls[p.id] = dice
+    this.log(`${p.name}${auto ? ' 没动静，替他' : ''} 摇出 ${dice[0]}+${dice[1]}`, p.id)
+  }
+
+  /** 对决超时：没挑对手就算了；没摇的替他摇 */
+  private duelTimeout() {
+    const g = this.g
+    const d = g.duel
+    if (!d || d.done || g.phase !== 'duel') return
+    if (!d.b) {
+      g.duel = null
+      this.log(`${this.player(d.a).name} 没挑对手，对决取消`, d.a)
+      g.phase = 'end'
+      return this.afterMove()
+    }
+    for (const id of [d.a, d.b]) if (!d.rolls[id]) this.duelThrow(this.player(id), true)
+    this.resolveDuel()
+  }
+
+  private resolveDuel() {
+    const g = this.g
+    const d = g.duel!
+    this.disarm('duel')
+    const sum = (id: string) => d.rolls[id]![0] + d.rolls[id]![1]
+    const a = this.player(d.a)
+    const b = this.player(d.b!)
+    const diff = sum(a.id) - sum(b.id)
+    d.done = true
+    if (diff === 0) {
+      this.log(`${a.name} 和 ${b.name} 点数一样，平局`)
+    } else {
+      const [win, lose] = diff > 0 ? [a, b] : [b, a]
+      const amount = Math.min(d.stake, Math.max(0, lose.cash))
+      lose.cash -= amount
+      win.cash += amount
+      d.winner = win.id
+      this.log(`${win.name} 赢了对决，从 ${lose.name} 那里拿走 ${money(amount)}`, win.id)
+    }
+    g.phase = 'end'
+    this.afterMove()
+  }
+
+  // ---------------- 选择题卡 ----------------
+
+  offerChoice(deck: 'chance' | 'chest', key: string, text: string, options: string[]) {
+    const g = this.g
+    g.choice = { id: ++g.seq, deck, key, text, options }
+    g.phase = 'choose'
+  }
+
+  private chooseOption(index: number) {
+    const g = this.g
+    const c = g.choice
+    if (g.phase !== 'choose' || !c) fail('现在没有要选的')
+    const opt = c!.options[Math.floor(Number(index))]
+    if (opt === undefined) fail('没有这个选项')
+    const p = this.cur()
+    g.choice = null
+    g.phase = 'end'
+    this.log(`${p.name} 选了：${opt}`, p.id)
+    const pick = Math.floor(Number(index))
+    const gamble = (win: boolean, text: string, dice: [number, number]) => {
+      g.gamble = { id: ++g.seq, dice, win, text }
+      this.log(`${p.name} 掷出 ${dice[0]}+${dice[1]}，${text}`, p.id)
+    }
+    switch (c!.key) {
+      case 'cash-or-gamble':
+        if (pick === 0) this.receive(100)
+        else {
+          const dice: [number, number] = [this.die(), this.die()]
+          const win = dice[0] === dice[1]
+          gamble(win, win ? '双数！领 $300' : '没中，什么都没有', dice)
+          if (win) this.receive(300)
+        }
+        break
+      case 'fine-or-gamble':
+        if (pick === 0) this.charge(50, [], '罚款')
+        else {
+          const dice: [number, number] = [this.die(), this.die()]
+          const win = dice[0] + dice[1] >= 8
+          gamble(win, win ? '免罚！' : '没逃掉，交 $150', dice)
+          if (!win) this.charge(150, [], '罚款')
+        }
+        break
+      case 'step':
+        if (pick === 0) this.moveTo((p.pos + 3) % BOARD.length)
+        else this.moveBack(3)
+        break
+    }
+    this.afterMove()
+  }
+
+  // ---------------- 表情 ----------------
+
+  private emote(me: GamePlayer, index: number, to: string | null) {
+    const g = this.g
+    const text = EMOTES[Math.floor(Number(index))]
+    if (!text) fail('没有这个表情')
+    // 防刷屏：太快的直接忽略
+    const now = Date.now()
+    if (now - (this.lastEmote.get(me.id) ?? 0) < 1200) return
+    this.lastEmote.set(me.id, now)
+    const target = to && g.players.some((p) => p.id === to) ? to : null
+    g.emotes = [...(g.emotes ?? []), { id: ++g.seq, from: me.id, to: target, text: text! }].slice(-12)
+  }
+
+  // ---------------- 全城事件 ----------------
+
+  private drawEvent() {
+    const g = this.g
+    const e = CITY_EVENTS[Math.floor(this.rng() * CITY_EVENTS.length)]!
+    const text = this.fill(e.text)
+    g.event = { id: ++g.seq, key: e.key, title: e.title, text, round: g.round }
+    this.log(`全城事件「${e.title}」：${text}`)
+    const alive = g.players.filter((p) => !p.bankrupt)
+    switch (e.key) {
+      case 'redpacket':
+        for (const p of alive) p.cash += 100
+        break
+      case 'taxday':
+        for (const p of alive) {
+          const tax = Math.floor(p.cash * 0.1)
+          p.cash -= tax
+          this.addPot(tax)
+        }
+        break
+      case 'typhoon':
+        for (const p of alive) {
+          const built = Object.entries(g.owners)
+            .filter(([, o]) => o.owner === p.id && o.houses > 0)
+            .sort((a, b) => b[1].houses - a[1].houses)
+          if (!built.length) continue
+          const [key, o] = built[0]!
+          const t = this.board[Number(key)] as Extract<BuyableTile, { kind: 'country' }>
+          o.houses--
+          p.cash += t.house / 2
+          this.log(`台风吹倒了 ${p.name} 在 ${t.name} 的一栋房子，赔偿 ${money(t.house / 2)}`, p.id)
+        }
+        break
+    }
+  }
+
+  // ---------------- 城市彩蛋 ----------------
+
+  /** 触发彩蛋；把人带走了（打滑、摩天轮）返回 true，这一格就不再结算 */
+  private triggerEgg(kind: EggKind, tile: number): boolean {
+    const g = this.g
+    const p = this.cur()
+    const name = this.tileName(tile)
+    switch (kind) {
+      case 'slide': {
+        const n = 1 + Math.floor(this.rng() * 3)
+        this.markEgg(kind, tile, `${name}的冰面太滑，${p.name} 一路滑出去 ${n} 格`)
+        for (let k = 0; k < n; k++) {
+          p.pos = (p.pos + 1) % BOARD.length
+          if (p.pos === 0) this.passGo(p)
+        }
+        this.land()
+        return true
+      }
+      case 'wheel': {
+        const free = this.board.flatMap((t, i) => (isBuyable(t) && !g.owners[i] && i !== tile ? [i] : []))
+        if (!free.length) {
+          this.markEgg(kind, tile, `${p.name} 坐了一圈${name}的摩天轮，又回到了原地`)
+          return false
+        }
+        const to = free[Math.floor(this.rng() * free.length)]!
+        this.markEgg(kind, tile, `${p.name} 坐上${name}的摩天轮，转了一圈落到 ${this.tileName(to)}`)
+        p.pos = to
+        this.land()
+        return true
+      }
+      case 'dig': {
+        if (this.rng() < 0.5) {
+          const amount = [50, 100, 200][Math.floor(this.rng() * 3)]!
+          p.cash += amount
+          this.markEgg(kind, tile, `${p.name} 在${name}一铲挖到宝贝，卖了 ${money(amount)}`)
+        } else if (p.cash >= 50) {
+          p.cash -= 50
+          this.addPot(50)
+          this.markEgg(kind, tile, `${p.name} 在${name}一铲挖坏了文物，交保护费 $50`)
+        } else {
+          this.markEgg(kind, tile, `${p.name} 在${name}一铲挖坏了文物，穷得交不起保护费，算了`)
+        }
+        return false
+      }
+      case 'dimsum': {
+        const others = this.others()
+        if (!others.length) return false
+        if (this.rng() < 0.5 || p.cash < 10 * others.length) {
+          this.markEgg(kind, tile, `大家请 ${p.name} 去${name}叹早茶，每人出 $10`)
+          this.collectFromEach(10)
+        } else {
+          this.markEgg(kind, tile, `${p.name} 在${name}请大家叹早茶，每人 $10`)
+          for (const o of others) {
+            p.cash -= 10
+            o.cash += 10
+          }
+        }
+        return false
+      }
+      case 'milktea':
+        p.skipTurns = 1
+        p.cash += 30
+        this.markEgg(kind, tile, `${p.name} 在${name}排队买奶茶，下回合歇一次，先领 $30`)
+        return false
+      case 'bless':
+        p.blessed = true
+        this.markEgg(kind, tile, `${p.name} 在${name}天坛祈福，下次掷骰子必出双数`)
+        return false
+    }
+    return false
+  }
+
+  private markEgg(kind: EggKind, tile: number, text: string) {
+    const g = this.g
+    const p = this.cur()
+    g.egg = { id: ++g.seq, tile, kind, text, player: p.id }
+    this.log(text, p.id)
+    this.seeEgg(p, tile)
+  }
+
+  /** 记下这一局揭晓过的彩蛋；一个人触发三个不同的彩蛋得徽章 */
+  private seeEgg(p: GamePlayer, tile: number) {
+    const g = this.g
+    g.eggsSeen ??= []
+    if (!g.eggsSeen.includes(tile)) g.eggsSeen.push(tile)
+    const st = this.stats(p)
+    if (!st.eggs.includes(tile)) st.eggs.push(tile)
+    if (st.eggs.length >= 3) this.award(p, '彩蛋猎人')
+  }
+
+  // ---------------- 统计与徽章 ----------------
+
+  private stats(p: GamePlayer): Stats {
+    const g = this.g
+    g.stats ??= {}
+    return (g.stats[p.id] ??= { rentPaid: 0, rentGot: 0, jail: 0, doubles: 0, eggs: [] })
+  }
+
+  private award(p: GamePlayer, badge: string) {
+    p.badges ??= []
+    if (p.badges.includes(badge)) return
+    p.badges.push(badge)
+    this.log(`${p.name} 获得徽章「${badge}」`, p.id)
+  }
+
+  private firstLandlord(p: GamePlayer) {
+    if (!this.g.players.some((x) => x.badges?.includes('首个地主'))) this.award(p, '首个地主')
+  }
+
+  /** 结算时的本局高光 */
+  private highlights() {
+    const g = this.g
+    const out: { title: string; text: string; player?: string }[] = []
+    if (g.topRent) {
+      const t = g.topRent
+      out.push({
+        title: '最贵的一笔租金',
+        text: `${this.player(t.payer).name} 在 ${this.tileName(t.tile)} 付给 ${this.player(t.owner).name} ${money(t.amount)}`,
+        player: t.payer,
+      })
+    }
+    const best = (key: 'rentGot' | 'rentPaid' | 'jail' | 'doubles') => {
+      let top: GamePlayer | null = null
+      for (const p of g.players) if (this.stats(p)[key] > (top ? this.stats(top)[key] : 0)) top = p
+      return top
+    }
+    const king = best('rentGot')
+    if (king) {
+      this.award(king, '收租王')
+      out.push({ title: '收租王', text: `${king.name} 一共收了 ${money(this.stats(king).rentGot)} 租金`, player: king.id })
+    }
+    const sucker = best('rentPaid')
+    if (sucker) out.push({ title: '最佳租客', text: `${sucker.name} 一共交了 ${money(this.stats(sucker).rentPaid)} 租金`, player: sucker.id })
+    const jail = best('jail')
+    if (jail) out.push({ title: '监狱常客', text: `${jail.name} 进了 ${this.stats(jail).jail} 次监狱`, player: jail.id })
+    const lucky = best('doubles')
+    if (lucky) out.push({ title: '双数之王', text: `${lucky.name} 掷出 ${this.stats(lucky).doubles} 次双数`, player: lucky.id })
+    return out
+  }
+
+    private spice() {
     const total = SPICE_LEVELS.reduce((n, s) => n + s.weight, 0)
     let r = this.rng() * total
     for (const s of SPICE_LEVELS) {
@@ -788,7 +1363,16 @@ export class Room {
     return SPICE_LEVELS[0]!
   }
 
+  /** 租金：基础租金按本轮全城事件调整 */
   rentOf(pos: number, mods: RentMods = {}) {
+    const base = this.baseRent(pos, mods)
+    const ev = this.g.event?.key
+    let mult = ev === 'cooldown' ? 0.5 : ev === 'boom' ? 1.5 : 1
+    if (ev === 'speedup' && this.board[pos]!.kind === 'airline') mult *= 2
+    return Math.round(base * mult)
+  }
+
+  private baseRent(pos: number, mods: RentMods = {}) {
     const g = this.g
     const t = this.board[pos] as BuyableTile
     const own = g.owners[pos]
@@ -975,6 +1559,21 @@ export class Room {
     p.bankruptOrder = g.players.filter((x) => x.bankrupt).length
     g.trades = g.trades.filter((t) => t.from !== p.id && t.to !== p.id)
     this.log(`${reason}，${p.name} 破产${heir ? `，资产归 ${heir.name}` : '，地产收归银行'}`, p.id)
+    // 正在进行的拍卖、收租、对决里有他，按他不在处理
+    if (g.auction?.high?.player === p.id) g.auction.high = null
+    const isCur = this.cur().id === p.id
+    if (!isCur && g.rentClaim?.to === p.id) {
+      this.disarm('claim')
+      g.rentClaim = null
+      g.phase = 'end'
+      this.afterMove()
+    }
+    if (!isCur && g.duel && !g.duel.done && g.duel.b === p.id) {
+      this.disarm('duel')
+      g.duel = null
+      g.phase = 'end'
+      this.afterMove()
+    }
 
     const alive = g.players.filter((x) => !x.bankrupt)
     if (alive.length <= 1) return this.gameOver('lastStanding')
@@ -996,6 +1595,7 @@ export class Room {
     p.cash -= t.price
     g.owners[p.pos] = { owner: p.id, houses: 0, mortgaged: false }
     this.log(`${p.name} 买下 ${t.name}，花费 ${money(t.price)}`, p.id)
+    this.firstLandlord(p)
     g.phase = 'end'
     this.afterMove()
   }
@@ -1156,18 +1756,20 @@ export class Room {
   private gameOver(reason: EndReason) {
     const g = this.g
     this.clearShake()
+    this.clearPending()
     g.stepsLeft = 0
+    const highlights = this.highlights()
     const standings = [...g.players]
       .sort((a, b) => {
         if (a.bankrupt !== b.bankrupt) return a.bankrupt ? 1 : -1
         if (a.bankrupt && b.bankrupt) return (b.bankruptOrder ?? 0) - (a.bankruptOrder ?? 0)
         return this.worth(b) - this.worth(a)
       })
-      .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, worth: this.worth(p), bankrupt: p.bankrupt }))
+      .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, worth: this.worth(p), bankrupt: p.bankrupt, badges: p.badges ?? [] }))
     g.phase = 'over'
     g.debt = null
     g.trades = []
-    g.result = { reason, standings }
+    g.result = { reason, standings, highlights }
     if (reason !== 'aborted') this.log(`游戏结束，${standings[0]!.name} 获胜`, standings[0]!.id)
   }
 
@@ -1181,8 +1783,28 @@ export class Room {
   }
 
   static gameView(g: GameState): GameView {
-    const { decks: _d, afterDebt: _a, seq: _s, shakeUntil, shakeExtendedAt: _e, ...view } = g
-    return { ...view, theme: view.theme ?? 'world', spice: view.spice ?? null, spiceSeen: view.spiceSeen ?? false, shakeTaps: view.shakeTaps ?? 0, shakeMs: shakeUntil ? Math.max(0, shakeUntil - Date.now()) : null }
+    const { decks: _d, afterDebt: _a, seq: _s, shakeUntil, shakeExtendedAt: _e, stats: _st, topRent: _t, ...view } = g
+    // 旧版本保存的对局缺的字段补上默认值
+    const legacy = view as Partial<GameView> & { spiceSeen?: boolean }
+    return {
+      ...view,
+      players: view.players.map((p) => ({ ...p, skipTurns: p.skipTurns ?? 0, blessed: p.blessed ?? false, badges: p.badges ?? [] })),
+      theme: view.theme ?? 'world',
+      spice: view.spice ?? null,
+      eggsSeen: view.eggsSeen ?? (legacy.spiceSeen ? [39] : []),
+      egg: view.egg ?? null,
+      rentClaim: view.rentClaim ?? null,
+      auction: view.auction ?? null,
+      duel: view.duel ?? null,
+      choice: view.choice ?? null,
+      gamble: view.gamble ?? null,
+      event: view.event ?? null,
+      emotes: view.emotes ?? [],
+      shakeTaps: view.shakeTaps ?? 0,
+      shakeMs: shakeUntil ? Math.max(0, shakeUntil - Date.now()) : null,
+      now: Date.now(),
+      result: view.result ? { ...view.result, highlights: view.result.highlights ?? [] } : null,
+    }
   }
 
   /** 回放：用当时的对局状态拼出旁观视角 */

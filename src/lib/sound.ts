@@ -92,6 +92,12 @@ export const sfx = {
     tone(820, 620, 0.09, { type: 'sine', vol: 0.18 })
     noise(0.03, { vol: 0.15, freq: 2500, q: 4 })
   },
+  /** 叮铃：有租可收、有人出价 */
+  ring() {
+    tone(1318, 1318, 0.09, { type: 'square', vol: 0.06 })
+    tone(1568, 1568, 0.09, { type: 'square', vol: 0.06, delay: 0.1 })
+    tone(1318, 1318, 0.09, { type: 'square', vol: 0.06, delay: 0.2 })
+  },
   /** 心跳：揭晓前的停顿 */
   heartbeat() {
     tone(70, 50, 0.12, { type: 'sine', vol: 0.5 })

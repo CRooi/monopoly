@@ -3,9 +3,10 @@ import { BAIL, BOARD, GO_SALARY, JAIL_POS, SPICE_LEVELS, type ClientMessage } fr
 import { GameError, Room } from './room'
 
 /** 建房并开局：玩家顺序固定为 A、B、C… */
-/** 默认用世界地图，规则测试不受重庆火锅影响；测中国城市时传 theme */
+/** 默认用世界地图，规则测试不受城市彩蛋影响；测中国城市时传 theme */
 function setup(n = 2, config = {}) {
-  const { room, user: a } = Room.create('1234', { theme: 'world', ...config }, 'A')
+  // 收租、拍卖、全城事件默认关掉，规则测试不受影响；专门测它们时再打开
+  const { room, user: a } = Room.create('1234', { theme: 'world', rentClaim: false, auction: false, cityEvents: false, ...config }, 'A')
   const users = [a]
   for (let i = 1; i < n; i++) users.push(room.join(String.fromCharCode(65 + i)))
   // 不打乱顺序
@@ -48,7 +49,7 @@ describe('房间', () => {
     const { room } = Room.create('1000', {}, '房主')
     const b = room.join('B')
     expect(() => room.handle(b.id, { type: 'start' })).toThrow('只有房主')
-    expect(() => room.handle(b.id, { type: 'updateConfig', config: { startCash: 2000, maxRounds: 0, parkingPot: false, allowSpectators: true, theme: 'world' } })).toThrow('只有房主')
+    expect(() => room.handle(b.id, { type: 'updateConfig', config: { startCash: 2000, maxRounds: 0, parkingPot: false, allowSpectators: true, theme: 'world', rentClaim: true, auction: true, cityEvents: true } })).toThrow('只有房主')
   })
 
   test('房主离开后转给下一位', () => {
@@ -414,14 +415,14 @@ describe('中国城市主题', () => {
 
   test('火锅彩蛋开局时没有揭晓，停在无主的重庆上也不揭晓', () => {
     const { room, g, act } = setup(2, { theme: 'china' })
-    expect(g.spiceSeen).toBe(false)
+    expect(g.eggsSeen).not.toContain(39)
     g.players[0]!.pos = 36
     dice(room, 1, 2)
     act(0, { type: 'roll' })
     while (g.phase === 'move') act(0, { type: 'step' })
     expect(g.phase).toBe('buy')
     act(0, { type: 'buy' })
-    expect(g.spiceSeen).toBe(false)
+    expect(g.eggsSeen).not.toContain(39)
     expect(g.spice).toBeNull()
   })
 
@@ -462,7 +463,7 @@ describe('中国城市主题', () => {
     room.rng = () => 0.99
     while (g.phase === 'move') act(0, { type: 'step' })
     expect(g.spice!.level).toBe('超级无敌特特特特特特特特特变态辣')
-    expect(g.spiceSeen).toBe(true)
+    expect(g.eggsSeen).toContain(39)
     expect(g.players[0]!.cash).toBe(1500 - 50 * 3)
     expect(g.players[1]!.cash).toBe(1500 + 50 * 3)
   })
@@ -515,6 +516,257 @@ describe('中国城市主题', () => {
     while (g.phase === 'move') act(0, { type: 'step' })
     expect(g.spice).toBeNull()
     expect(g.players[0]!.cash).toBe(1450)
+  })
+})
+
+describe('房东收租', () => {
+  test('房东喊了才收租', () => {
+    const { room, g, act, ids } = setup(2, { rentClaim: true })
+    g.owners[3] = { owner: ids[1]!, houses: 0, mortgaged: false }
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    expect(g.phase).toBe('claim')
+    expect(g.rentClaim!.amount).toBe(4)
+    expect(() => act(0, { type: 'endTurn' })).toThrow()
+    expect(() => act(0, { type: 'claimRent' })).toThrow('没有租可收')
+    act(1, { type: 'claimRent' })
+    expect(g.players[0]!.cash).toBe(1496)
+    expect(g.players[1]!.cash).toBe(1504)
+    expect(g.phase).toBe('end')
+    room.dispose()
+  })
+
+  test('房东没喊就白住', () => {
+    const { room, g, act, ids } = setup(2, { rentClaim: true })
+    g.owners[3] = { owner: ids[1]!, houses: 0, mortgaged: false }
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    room['expireClaim']()
+    room.dispose()
+    expect(g.phase).toBe('end')
+    expect(g.players[0]!.cash).toBe(1500)
+    expect(() => act(1, { type: 'claimRent' })).toThrow('没有租可收')
+  })
+})
+
+describe('拍卖', () => {
+  test('放弃购买后全员拍卖，价高者得', () => {
+    const { room, g, act, ids } = setup(3, { auction: true })
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    act(0, { type: 'pass' })
+    expect(g.phase).toBe('auction')
+    act(1, { type: 'bid', amount: 20 })
+    expect(() => act(2, { type: 'bid', amount: 25 })).toThrow('至少 $30')
+    act(2, { type: 'bid', amount: 40 })
+    expect(() => act(1, { type: 'bid', amount: 99999 })).toThrow('现金不够')
+    room['finishAuction']()
+    room.dispose()
+    expect(g.owners[3]!.owner).toBe(ids[2]!)
+    expect(g.players[2]!.cash).toBe(1460)
+    expect(g.phase).toBe('end')
+  })
+
+  test('没人出价就流拍', () => {
+    const { room, g, act } = setup(2, { auction: true })
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    act(0, { type: 'pass' })
+    room['finishAuction']()
+    room.dispose()
+    expect(g.owners[3]).toBeUndefined()
+    expect(g.phase).toBe('end')
+  })
+})
+
+describe('对决', () => {
+  test('挑对手各摇一次，点数大的拿走赌注', () => {
+    const { room, g, act, ids } = setup()
+    g.players[0]!.pos = 19
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    expect(g.phase).toBe('duel')
+    act(0, { type: 'duelPick', target: ids[1]! })
+    dice(room, 6, 6, 1, 1)
+    act(0, { type: 'duelRoll' })
+    expect(() => act(0, { type: 'duelRoll' })).toThrow('摇过了')
+    act(1, { type: 'duelRoll' })
+    room.dispose()
+    expect(g.duel!.winner).toBe(ids[0]!)
+    expect(g.players[0]!.cash).toBe(1600)
+    expect(g.players[1]!.cash).toBe(1400)
+    expect(g.phase).toBe('end')
+  })
+
+  test('不想比就算了', () => {
+    const { room, g, act } = setup()
+    g.players[0]!.pos = 19
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    act(0, { type: 'duelPick', target: null })
+    room.dispose()
+    expect(g.duel).toBeNull()
+    expect(g.phase).toBe('end')
+  })
+
+  test('对手不摇就替他摇', () => {
+    const { room, g, act, ids } = setup()
+    g.players[0]!.pos = 19
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    act(0, { type: 'duelPick', target: ids[1]! })
+    dice(room, 1, 1, 6, 6)
+    act(0, { type: 'duelRoll' })
+    room['duelTimeout']()
+    room.dispose()
+    expect(g.duel!.winner).toBe(ids[1]!)
+    expect(g.players[1]!.cash).toBe(1600)
+  })
+})
+
+describe('全城事件', () => {
+  test('第 2 轮开局翻事件：楼市降温本轮租金减半', () => {
+    const { room, g, act, ids } = setup(2, { cityEvents: true })
+    g.owners[3] = { owner: ids[1]!, houses: 0, mortgaged: false }
+    expect(room.rentOf(3)).toBe(4)
+    g.phase = 'end'
+    act(0, { type: 'endTurn' })
+    expect(g.event).toBeNull()
+    // 事件按随机数取第一张「楼市降温」
+    room.rng = () => 0
+    g.phase = 'end'
+    act(1, { type: 'endTurn' })
+    expect(g.round).toBe(2)
+    expect(g.event!.title).toBe('楼市降温')
+    expect(room.rentOf(3)).toBe(2)
+  })
+
+  test('全民红包每人领 $100', () => {
+    const { room, g, act } = setup(2, { cityEvents: true })
+    g.phase = 'end'
+    act(0, { type: 'endTurn' })
+    room.rng = () => 3.5 / 8
+    g.phase = 'end'
+    act(1, { type: 'endTurn' })
+    expect(g.event!.key).toBe('redpacket')
+    expect(g.players.every((p) => p.cash === 1600)).toBe(true)
+  })
+})
+
+describe('选择题卡', () => {
+  test('领 $100，还是赌一把', () => {
+    const { room, g, act } = setup()
+    g.decks.chance.unshift(16)
+    g.players[0]!.pos = 4
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    act(0, { type: 'drawCard' })
+    expect(g.phase).toBe('choose')
+    expect(g.choice!.options.length).toBe(2)
+    act(0, { type: 'chooseOption', index: 0 })
+    expect(g.players[0]!.cash).toBe(1600)
+    expect(g.phase).toBe('end')
+  })
+
+  test('赌一把掷出双数领 $300', () => {
+    const { room, g, act } = setup()
+    g.decks.chance.unshift(16)
+    g.players[0]!.pos = 4
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    act(0, { type: 'drawCard' })
+    dice(room, 4, 4)
+    act(0, { type: 'chooseOption', index: 1 })
+    expect(g.gamble!.win).toBe(true)
+    expect(g.players[0]!.cash).toBe(1800)
+  })
+})
+
+describe('城市彩蛋', () => {
+  const walkTo = (room: Room, g: Room['d']['game'] & object, act: (i: number, m: ClientMessage) => unknown, from: number) => {
+    g.players[0]!.pos = from
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    room.rng = () => 0
+    while (g.phase === 'move') act(0, { type: 'step' })
+  }
+
+  test('哈尔滨冰面打滑，往前滑出去', () => {
+    const { room, g, act } = setup(2, { theme: 'china' })
+    walkTo(room, g, act, 11)
+    expect(g.egg!.kind).toBe('slide')
+    expect(g.eggsSeen).toContain(14)
+    expect(g.players[0]!.pos).toBe(15)
+    expect(g.phase).toBe('buy')
+  })
+
+  test('天津摩天轮，落到一块没人买的地', () => {
+    const { room, g, act } = setup(2, { theme: 'china' })
+    walkTo(room, g, act, 23)
+    expect(g.egg!.kind).toBe('wheel')
+    expect(g.players[0]!.pos).toBe(1)
+    expect(g.phase).toBe('buy')
+  })
+
+  test('长沙奶茶排队，下回合歇一次', () => {
+    const { room, g, act } = setup(2, { theme: 'china' })
+    walkTo(room, g, act, 16)
+    expect(g.egg!.kind).toBe('milktea')
+    expect(g.players[0]!.cash).toBe(1530)
+    if (g.phase === 'buy') act(0, { type: 'pass' })
+    act(0, { type: 'endTurn' })
+    g.phase = 'end'
+    act(1, { type: 'endTurn' })
+    // 阿狸在排队，又轮到白菜
+    expect(g.turn).toBe(1)
+    expect(g.players[0]!.skipTurns).toBe(0)
+  })
+
+  test('北京天坛祈福，下次掷骰子必出双数', () => {
+    const { room, g, act } = setup(2, { theme: 'china' })
+    walkTo(room, g, act, 31)
+    expect(g.players[0]!.blessed).toBe(true)
+    if (g.phase === 'buy') act(0, { type: 'pass' })
+    act(0, { type: 'endTurn' })
+    g.phase = 'end'
+    act(1, { type: 'endTurn' })
+    dice(room, 2, 5)
+    act(0, { type: 'roll' })
+    expect(g.lastRoll!.dice).toEqual([2, 2])
+    expect(g.players[0]!.blessed).toBe(false)
+  })
+})
+
+describe('徽章与高光', () => {
+  test('第一个买地的人得「首个地主」', () => {
+    const { room, g, act } = setup()
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    act(0, { type: 'buy' })
+    expect(g.players[0]!.badges).toContain('首个地主')
+  })
+
+  test('结算列出最贵的一笔租金和收租王', () => {
+    const { room, g, act, ids } = setup()
+    g.owners[3] = { owner: ids[1]!, houses: 5, mortgaged: false }
+    dice(room, 1, 2)
+    act(0, { type: 'roll' })
+    while (g.phase === 'move') act(0, { type: 'step' })
+    act(0, { type: 'abort' })
+    const titles = g.result!.highlights.map((h) => h.title)
+    expect(titles).toContain('最贵的一笔租金')
+    expect(titles).toContain('收租王')
+    expect(g.players[1]!.badges).toContain('收租王')
   })
 })
 
