@@ -126,7 +126,7 @@ export function GameScreen({
     <div className="mx-auto flex min-h-dvh max-w-[1400px] flex-col gap-3 px-3 pb-4 safe-top lg:h-dvh lg:px-5">
       <header className="flex items-center gap-2 pt-1 text-paper">
         <Logo className="size-8" />
-        <span className="font-display text-lg">房间 {state.room.code}</span>
+        <span className="font-display text-lg whitespace-nowrap">房间 {state.room.code}</span>
         <ConnBadge status={status} className="text-paper/80" />
         <div className="ml-auto flex items-center gap-1">
           {me && (
@@ -216,22 +216,29 @@ export function GameScreen({
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto lg:pr-1">
             {tab === 'players' && (
-              <PlayersPanel
-                emotes={emotes}
-                state={state}
-                onTrade={setTradeWith}
-                onKick={
-                  state.me.isHost
-                    ? (id, name) =>
-                        setConfirm({
-                          title: `请出 ${name}？`,
-                          description: '对局中请出的玩家按破产处理，地产收归银行。',
-                          confirmText: '请出',
-                          onConfirm: () => send({ type: 'kick', userId: id }),
-                        })
-                    : undefined
-                }
-              />
+              <>
+                <PlayersPanel
+                  emotes={emotes}
+                  state={state}
+                  onTrade={setTradeWith}
+                  onKick={
+                    state.me.isHost
+                      ? (id, name) =>
+                          setConfirm({
+                            title: `请出 ${name}？`,
+                            description: '对局中请出的玩家按破产处理，地产收归银行。',
+                            confirmText: '请出',
+                            onConfirm: () => send({ type: 'kick', userId: id }),
+                          })
+                      : undefined
+                  }
+                />
+                {/* 宽屏时玩家下面接着放最近的动态，侧栏不空着 */}
+                <div className="mt-4 hidden space-y-1.5 lg:block">
+                  <div className="px-1 text-xs font-semibold tracking-wider text-paper/70">最近动态</div>
+                  <LogPanel game={g} limit={8} />
+                </div>
+              </>
             )}
             {tab === 'assets' && me && <AssetsPanel game={g} me={me} send={send} onTile={setTile} />}
             {tab === 'trades' && me && (

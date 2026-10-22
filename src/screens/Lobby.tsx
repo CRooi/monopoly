@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Copy, Crown, Eye, LogOut, Play, Trophy, Tv, UserX, Users, WifiOff } from 'lucide-react'
+import { Copy, Crown, Eye, LogOut, Play, Trophy, Tv, UserPlus, UserX, Users, WifiOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { MAX_PLAYERS, MIN_PLAYERS, type ClientMessage, type StateView } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
@@ -47,7 +47,7 @@ export function Lobby({
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 pb-4 safe-top safe-bottom">
+    <div className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 pb-4 safe-top safe-bottom lg:max-w-4xl">
       <header className="flex items-center gap-2 pt-1 text-paper">
         <Logo className="size-8" />
         <span className="font-display text-xl">大富翁</span>
@@ -77,7 +77,13 @@ export function Lobby({
         </div>
       </header>
 
-      <button onClick={share} className="panel mx-auto flex items-center gap-3 px-5 py-2 transition active:scale-95">
+      <div className="grid gap-4 lg:grid-cols-[1fr_1fr] lg:items-start">
+      <div className="space-y-4">
+      {/* 房间码做成一张票：两侧打孔，点一下分享或复制邀请链接 */}
+      <button
+        onClick={share}
+        className="panel relative flex w-full items-center justify-center gap-3 px-5 py-3 transition active:scale-[0.98] before:absolute before:top-1/2 before:-left-2 before:size-4 before:-translate-y-1/2 before:rounded-full before:bg-felt after:absolute after:top-1/2 after:-right-2 after:size-4 after:-translate-y-1/2 after:rounded-full after:bg-felt"
+      >
         <span className="text-xs text-ink/60">房间码</span>
         <span className="font-display text-4xl tracking-[0.25em] text-brick">{room.code}</span>
         <Copy className="size-4 text-ink/60" />
@@ -117,6 +123,14 @@ export function Lobby({
               )}
             </div>
           ))}
+          {/* 空位：至少凑满两排，满员前总留一个 */}
+          {Array.from({ length: room.members.length >= MAX_PLAYERS ? 0 : Math.max(1, 4 - room.members.length) }, (_, i) => (
+            <div key={`empty-${i}`} className="flex items-center gap-2 rounded-lg border border-dashed border-ink/20 px-2.5 py-2">
+              <span className="flex size-9 items-center justify-center rounded-full border-2 border-dashed border-ink/20 text-ink/30">
+                <UserPlus className="size-4" />
+              </span>
+            </div>
+          ))}
         </div>
         {room.spectators.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink/60">
@@ -130,11 +144,14 @@ export function Lobby({
         )}
       </section>
 
+      </div>
+
       <section className="panel p-4">
         <ConfigForm value={room.config} onChange={(config) => send({ type: 'updateConfig', config })} disabled={!me.isHost} />
       </section>
+      </div>
 
-      <div className="mt-auto space-y-2">
+      <div className="mt-auto space-y-2 lg:mx-auto lg:mt-2 lg:w-full lg:max-w-md">
         {onReview && (
           <Button variant="paper" size="lg2" className="w-full" onClick={onReview}>
             <Trophy /> 上一局结果

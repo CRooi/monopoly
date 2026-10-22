@@ -155,7 +155,7 @@ export function AssetsPanel({ game, me, send, onTile }: { game: GameView; me: Ga
   )
 }
 
-export function LogPanel({ game }: { game: GameView }) {
+export function LogPanel({ game, limit }: { game: GameView; /** 只显示最近几条 */ limit?: number }) {
   const ref = useRef<HTMLDivElement>(null)
   const colorOf = Object.fromEntries(game.players.map((p) => [p.id, p.color]))
   const last = game.log.at(-1)?.id
@@ -164,7 +164,7 @@ export function LogPanel({ game }: { game: GameView }) {
   }, [last])
   return (
     <div className="space-y-1">
-      {game.log.map((l) => (
+      {(limit ? game.log.slice(-limit) : game.log).map((l) => (
         <div key={l.id} className="flex gap-2 rounded-md bg-paper/90 px-2.5 py-1 text-[13px] leading-snug">
           <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: l.who ? colorOf[l.who] : '#b5a88e' }} />
           <span>{l.text}</span>

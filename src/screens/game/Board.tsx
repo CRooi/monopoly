@@ -318,6 +318,23 @@ function useAnimatedPositions(players: GamePlayer[], sound: boolean) {
   return shown
 }
 
+/** 棋盘中央的一叠卡 */
+function CardStack({ deck, className }: { deck: 'chance' | 'chest'; className?: string }) {
+  const chance = deck === 'chance'
+  const face = chance ? 'bg-[#ffe8cc] border-[#e8a35c]' : 'bg-[#d6ecfb] border-[#7fb8e0]'
+  return (
+    <div className={cn('pointer-events-none absolute h-[11cqw] w-[17cqw] -rotate-45', className)}>
+      {[2, 1].map((k) => (
+        <div key={k} className={cn('absolute inset-0 rounded-[1cqw] border-[0.3cqw]', face)} style={{ transform: `translate(${k * 0.5}cqw, ${k * 0.5}cqw)`, opacity: 0.7 }} />
+      ))}
+      <div className={cn('absolute inset-0 flex items-center justify-center gap-[1cqw] rounded-[1cqw] border-[0.3cqw] shadow-[0_0.5cqw_1cqw_rgb(0_0_0/0.2)]', face)}>
+        {chance ? <ChanceMark className="size-[5cqw]" /> : <Chest className="size-[5cqw]" />}
+        <span className={cn('font-display text-[2.6cqw]', chance ? 'text-[#c46a14]' : 'text-[#1c63c9]')}>{chance ? '机会' : '命运'}</span>
+      </div>
+    </div>
+  )
+}
+
 export function Board({
   game,
   onTileClick,
@@ -377,9 +394,14 @@ export function Board({
         ))}
         <div className="relative flex min-h-0 min-w-0 flex-col items-center justify-center overflow-hidden" style={{ gridRow: '2 / 11', gridColumn: '2 / 11' }}>
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,#eef7ef,#d5e9da)]" />
+          {/* 像经典棋盘一样：斜着一条红色横幅，两个角上各放一叠机会卡、命运卡 */}
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="-rotate-45 font-display text-[13cqw] whitespace-nowrap text-[#1f8a4c]/[0.07]">大富翁</span>
+            <div className="flex h-[6cqw] w-[140%] shrink-0 -rotate-45 items-center justify-center border-y-[0.4cqw] border-[#fff8e6] bg-brick/85 shadow-[0_0.5cqw_1.2cqw_rgb(0_0_0/0.18)]">
+              <span className="font-display text-[3.8cqw] tracking-[0.5em] text-[#fff8e6]">大富翁</span>
+            </div>
           </div>
+          <CardStack deck="chance" className="top-[9%] left-[9%]" />
+          <CardStack deck="chest" className="right-[9%] bottom-[9%]" />
           <div className="relative flex size-full min-h-0 flex-col items-center justify-center">{children}</div>
         </div>
       </div>

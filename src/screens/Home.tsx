@@ -5,6 +5,7 @@ import { DEFAULT_CONFIG, type RoomConfig } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
 import { Logo } from '@/components/art/icons'
 import { AvatarPicker } from '@/components/game/AvatarPicker'
+import { TileMarquee } from '@/components/game/TileMarquee'
 import { ConfigForm } from '@/components/game/ConfigForm'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -77,12 +78,21 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
   )
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col px-4 safe-top safe-bottom">
+    <div className="relative min-h-dvh overflow-hidden">
+      {mode === 'menu' && (
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-[6vh] -rotate-3 space-y-4 opacity-70 sm:top-[8vh]">
+          <TileMarquee theme="china" />
+          <TileMarquee theme="world" reverse />
+        </div>
+      )}
+    <div className="relative mx-auto flex min-h-dvh max-w-md flex-col px-4 safe-top safe-bottom">
       {mode === 'menu' ? (
         <>
           <div className="flex flex-1 flex-col items-center justify-center gap-3 pt-6">
-            <Logo className="animate-float size-28" />
-            <h1 className="text-title font-display text-6xl">大富翁</h1>
+            <div className="flex flex-col items-center gap-3 rounded-[1.75rem] border border-[#f2b705]/30 bg-felt-deep/95 px-12 pt-7 pb-6 shadow-[0_24px_50px_-18px_rgb(0_0_0/0.7),inset_0_1px_0_rgb(255_255_255/0.08)]">
+              <Logo className="animate-float size-24 drop-shadow-[0_10px_18px_rgb(0_0_0/0.45)]" />
+              <h1 className="text-title font-display text-6xl tracking-[0.12em]">大富翁</h1>
+            </div>
           </div>
           <div className="panel animate-rise space-y-4 p-5">
             <div className="flex items-center gap-3">
@@ -145,6 +155,7 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
           )}
         </div>
       )}
+    </div>
     </div>
   )
 }
