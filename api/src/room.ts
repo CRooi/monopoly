@@ -199,16 +199,19 @@ const CHEST: Card[] = [
   { text: '前进 3 格，还是后退 3 格？', act: (r) => r.offerChoice('chest', 'step', '前进 3 格，还是后退 3 格？', ['前进 3 格', '后退 3 格']) },
 ]
 
-/** 全城事件：从第 2 轮起每轮开局翻一张，影响整轮 */
+/**
+ * 全城事件：从第 2 轮起每轮开局翻一张，影响整轮。
+ * story 是揭晓前一句一句播放的小故事，只铺气氛，不说结果
+ */
 const CITY_EVENTS = [
-  { key: 'cooldown', title: '楼市降温', text: '本轮所有租金减半' },
-  { key: 'boom', title: '楼市火爆', text: '本轮所有租金 ×1.5' },
-  { key: 'inflation', title: '通货膨胀', text: '本轮经过起点领 $300' },
-  { key: 'redpacket', title: '全民红包', text: '每人领 $100' },
-  { key: 'typhoon', title: '台风过境', text: '每家拆掉一栋房子，按半价赔偿' },
-  { key: 'speedup', title: '交通提速', text: '本轮{transit}租金翻倍' },
-  { key: 'taxday', title: '交税日', text: '每人交现金的 10%' },
-  { key: 'calm', title: '风平浪静', text: '什么也没发生' },
+  { key: 'cooldown', title: '楼市降温', text: '本轮所有租金减半', story: ['一大早，售楼处门口冷冷清清', '中介小哥蹲在门口叹气', '房东们开始坐不住了……'] },
+  { key: 'boom', title: '楼市火爆', text: '本轮所有租金 ×1.5', story: ['一大早，售楼处排起了长队', '有人连夜搬着小板凳来占位', '房东们笑得合不拢嘴……'] },
+  { key: 'inflation', title: '通货膨胀', text: '本轮经过起点领 $300', story: ['菜市场的白菜又涨价了', '钱包里的钱越来越不经花', '老板把大家叫进了办公室……'] },
+  { key: 'redpacket', title: '全民红包', text: '每人领 $100', story: ['手机突然震了一下', '群里冒出一个大红包', '手快有，手慢……也有！'] },
+  { key: 'typhoon', title: '台风过境', text: '每家拆掉一栋房子，按半价赔偿', story: ['天边的云越压越低', '窗户开始哐哐作响', '外面传来哗啦一声……'] },
+  { key: 'speedup', title: '交通提速', text: '本轮{transit}租金翻倍', story: ['{transit}公司开了个发布会', '台上的人神秘一笑', '「车票嘛，这个……」'] },
+  { key: 'taxday', title: '交税日', text: '每人交现金的 10%', story: ['门口来了一位穿制服的叔叔', '手里拿着一叠单子', '他清了清嗓子……'] },
+  { key: 'calm', title: '风平浪静', text: '什么也没发生', story: ['今天的风有点大', '好像要出什么事', '……然而什么也没发生'] },
 ]
 
 const DECKS = { chance: CHANCE, chest: CHEST }
@@ -1183,7 +1186,7 @@ export class Room {
     const g = this.g
     const e = CITY_EVENTS[Math.floor(this.rng() * CITY_EVENTS.length)]!
     const text = this.fill(e.text)
-    g.event = { id: ++g.seq, key: e.key, title: e.title, text, round: g.round }
+    g.event = { id: ++g.seq, key: e.key, title: e.title, text, round: g.round, story: e.story.map((l) => this.fill(l)) }
     this.log(`全城事件「${e.title}」：${text}`)
     const alive = g.players.filter((p) => !p.bankrupt)
     switch (e.key) {

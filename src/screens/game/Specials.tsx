@@ -17,6 +17,7 @@ import { TileMark } from '@/components/art/TileMark'
 import { EggMark } from '@/components/game/EggMark'
 import { Button } from '@/components/ui/button'
 import { useCountdown } from '@/hooks/useCountdown'
+import type { EventStory } from '@/hooks/useEventReveal'
 import { money } from '@/lib/rules'
 import { sfx } from '@/lib/sound'
 import { cn } from '@/lib/utils'
@@ -273,6 +274,38 @@ export function EventChip({ game }: { game: GameView }) {
       <Megaphone className="size-3.5 shrink-0" />
       <span className="shrink-0 font-semibold">{e.title}</span>
       <span className="truncate text-[#f3ead6]/80">{e.text}</span>
+    </div>
+  )
+}
+
+/** 全城事件的小故事：一句一句自动播放，最后揭晓事件和效果 */
+export function EventStoryCard({ story }: { story: EventStory }) {
+  const lines = story.event.story ?? []
+  const revealed = story.step >= lines.length
+  return (
+    <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-black/25 px-6 animate-in fade-in duration-300">
+      <div className="w-full max-w-sm space-y-4 rounded-2xl border border-[#b8860b]/60 bg-[#2a1a12] px-6 py-5 shadow-[0_20px_60px_-10px_rgb(0_0_0/0.6)]">
+        <div className="flex items-center gap-2 text-xs tracking-widest text-[#f3ead6]/60">
+          <Megaphone className="size-4 text-[#f7e08a]" /> 第 {story.event.round} 轮全城事件
+        </div>
+        <div className="flex min-h-20 items-center">
+          {revealed ? (
+            <div key="reveal" className="animate-pop space-y-1">
+              <div className="font-display text-4xl text-[#f7e08a]">{story.event.title}</div>
+              <div className="text-sm text-[#f3ead6]">{story.event.text}</div>
+            </div>
+          ) : (
+            <div key={story.step} className="animate-rise font-display text-2xl leading-snug text-[#f3ead6]">
+              {lines[story.step]}
+            </div>
+          )}
+        </div>
+        <div className="flex gap-1.5">
+          {[...lines, ''].map((_, i) => (
+            <span key={i} className={cn('h-1 flex-1 rounded-full transition-colors duration-300', i <= story.step ? 'bg-[#f7e08a]' : 'bg-white/15')} />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

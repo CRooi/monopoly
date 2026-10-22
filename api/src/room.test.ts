@@ -645,6 +645,9 @@ describe('全城事件', () => {
     act(1, { type: 'endTurn' })
     expect(g.round).toBe(2)
     expect(g.event!.title).toBe('楼市降温')
+    // 揭晓前播放的小故事，不提结果
+    expect(g.event!.story!.length).toBe(3)
+    expect(g.event!.story!.join('')).not.toContain('租金')
     expect(room.rentOf(3)).toBe(2)
   })
 

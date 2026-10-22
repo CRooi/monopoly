@@ -1,10 +1,12 @@
 import { useState, type ReactNode } from 'react'
 import type { StateView } from '@shared/types'
 import { useEmotes } from '@/hooks/useEmotes'
+import { useEventReveal } from '@/hooks/useEventReveal'
 import { useSpiceReveal } from '@/hooks/useSpiceReveal'
 import { cn } from '@/lib/utils'
 import { Board } from './Board'
 import { LogPanel, PlayersPanel } from './Panels'
+import { EventStoryCard } from './Specials'
 import { TileDialog } from './TileDialog'
 import { TurnPanel } from './TurnPanel'
 
@@ -25,7 +27,8 @@ export function WatchView({
 }) {
   // 实时画面里重庆火锅辣度跳动期间先不揭晓扣钱；回放直接显示
   const reveal = useSpiceReveal(live.game, !!isLive)
-  const state = { ...live, game: reveal.game }
+  const ev = useEventReveal(reveal.game, !!isLive)
+  const state = { ...live, game: ev.game }
   const g = state.game
   const emotes = useEmotes(g)
   const [tab, setTab] = useState<'players' | 'log' | 'extra'>(extraTab ? 'extra' : 'players')
@@ -62,6 +65,7 @@ export function WatchView({
         </div>
       </aside>
       <TileDialog game={g} tile={tile} send={noop} onClose={() => setTile(null)} />
+      {ev.story && <EventStoryCard story={ev.story} />}
     </div>
   )
 }

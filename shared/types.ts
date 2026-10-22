@@ -453,7 +453,15 @@ export interface GameView {
   /** 选择题卡里「赌一把」的结果 */
   gamble: { id: number; dice: [number, number]; win: boolean; text: string } | null
   /** 本轮的全城事件 */
-  event: { id: number; key: string; title: string; text: string; round: number } | null
+  event: {
+    id: number
+    key: string
+    title: string
+    text: string
+    round: number
+    /** 揭晓前一句一句播放的小故事 */
+    story?: string[]
+  } | null
   /** 最近的表情 */
   emotes: Emote[]
   /** 生成视图时服务端的时间，前端据此把各种 until 换算成本地倒计时 */

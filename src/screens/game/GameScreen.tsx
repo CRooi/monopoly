@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Flag as FlagIcon, LogOut, Megaphone, MessageCircle, Power, ScrollText, Tv, Users, Volume2, VolumeX, Wallet, ArrowLeftRight } from 'lucide-react'
+import { Flag as FlagIcon, LogOut, MessageCircle, Power, ScrollText, Tv, Users, Volume2, VolumeX, Wallet, ArrowLeftRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { EMOTES, type ClientMessage, type GameView, type StateView } from '@shared/types'
 import { Logo } from '@/components/art/icons'
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { ConnStatus } from '@/hooks/useRoomSocket'
 import { useEmotes } from '@/hooks/useEmotes'
+import { useEventReveal } from '@/hooks/useEventReveal'
 import { useSpiceReveal } from '@/hooks/useSpiceReveal'
 import { setMuted, sfx, useMuted } from '@/lib/sound'
 import { cn } from '@/lib/utils'
@@ -16,6 +17,7 @@ import { Board } from './Board'
 import { AssetsPanel, LogPanel, PlayersPanel } from './Panels'
 import { TileDialog } from './TileDialog'
 import { TradeCard, TradeDialog } from './Trade'
+import { EventStoryCard } from './Specials'
 import { TurnPanel } from './TurnPanel'
 
 type Tab = 'players' | 'assets' | 'trades' | 'log'
@@ -52,7 +54,9 @@ export function GameScreen({
 }) {
   // 重庆火锅辣度跳动期间，先不揭晓扣钱
   const reveal = useSpiceReveal(live.game!)
-  const state = { ...live, game: reveal.game }
+  // 全城事件先一句一句播小故事，揭晓之前不显示它带来的变化
+  const ev = useEventReveal(reveal.game)
+  const state = { ...live, game: ev.game }
   const g = state.game
   const me = g.players.find((p) => p.id === state.me.id)
   const alive = !!me && !me.bankrupt
@@ -82,20 +86,11 @@ export function GameScreen({
   const emotes = useEmotes(g)
   const [picking, setPicking] = useState(false)
 
-  // 新一轮翻出全城事件时，所有人都弹一张大卡；进页面时已经翻过的不再弹
-  const eventKey = g.event && g.event.round === g.round ? g.event.id : 0
-  const [eventDone, setEventDone] = useState(eventKey)
-  const eventBanner = eventKey && eventKey !== eventDone ? g.event : null
-  useEffect(() => {
-    if (!eventKey || eventKey === eventDone) return
-    sfx.reveal()
-    const t = setTimeout(() => setEventDone(eventKey), 2800)
-    return () => clearTimeout(t)
-  }, [eventKey, eventDone])
 
   // 轮到自己时弹出提示并响一声（标签页在后台时也能看到标题变化）
   const myTurn = alive && cur.id === me!.id && !over
-  const turnKey = myTurn && g.phase === 'roll' && !g.again ? (g.log.at(-1)?.id ?? 0) : 0
+  // 全城事件的小故事放完再提示
+  const turnKey = myTurn && g.phase === 'roll' && !g.again && !ev.story ? (g.log.at(-1)?.id ?? 0) : 0
   const [bannerDone, setBannerDone] = useState(0)
   const banner = turnKey !== bannerDone ? turnKey : 0
   useEffect(() => {
@@ -259,18 +254,7 @@ export function GameScreen({
           </div>
         </div>
       )}
-      {eventBanner && (
-        <div key={eventBanner.id} className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-6">
-          <div className="animate-[banner_2.8s_ease-out_both] flex max-w-sm items-center gap-4 rounded-2xl border border-[#b8860b]/60 bg-[#2a1a12] px-6 py-5 shadow-[0_20px_60px_-10px_rgb(0_0_0/0.6)]">
-            <Megaphone className="size-10 shrink-0 text-[#f7e08a]" />
-            <div>
-              <div className="text-xs tracking-widest text-[#f3ead6]/70">第 {eventBanner.round} 轮全城事件</div>
-              <div className="font-display text-3xl text-[#f7e08a]">{eventBanner.title}</div>
-              <div className="text-sm text-[#f3ead6]">{eventBanner.text}</div>
-            </div>
-          </div>
-        </div>
-      )}
+      {ev.story && <EventStoryCard story={ev.story} />}
       <Dialog open={picking} onOpenChange={setPicking}>
         <DialogContent className="panel max-w-xs">
           <DialogHeader>
