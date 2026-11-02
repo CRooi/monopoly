@@ -402,7 +402,10 @@ export function Board({
           </div>
           <CardStack deck="chance" className="top-[9%] left-[9%]" />
           <CardStack deck="chest" className="right-[9%] bottom-[9%]" />
-          <div className="relative flex size-full min-h-0 flex-col items-center justify-center">{children}</div>
+          {/* 中央面板内容多时（欠款、拍卖、窄屏）可以滚动，不然上下的按钮被裁掉按不到 */}
+          <div className="relative flex size-full min-h-0 flex-col items-center justify-center-safe overflow-y-auto overscroll-contain py-[1cqw] [scrollbar-width:thin]">
+            {children}
+          </div>
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { SPICE_LEVELS, type GameView } from '@shared/types'
 import { sfx } from '@/lib/sound'
 
@@ -86,18 +86,23 @@ export function useSpiceReveal<G extends GameView | null>(
     // 只在新的辣度出现时开始转
   }, [holdId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 压住期间同一个局面要给出同一个对象：下游 useEventReveal 在渲染时按引用比较，每次新对象会无限重渲染
+  const held = useMemo(
+    () =>
+      !hold || !g
+        ? g
+        : ({
+            ...g,
+            players: g.players.map((p) => ({ ...p, cash: hold.cash[p.id] ?? p.cash })),
+            log: g.log.filter((l) => l.id <= hold.logId),
+            eggsSeen: hold.seen,
+            // 付不起进了欠款，也等揭晓之后再显示
+            debt: null,
+            phase: g.phase === 'debt' ? 'end' : g.phase,
+          } as G),
+    [g, hold],
+  )
+
   if (!hold || !g) return { game: g, spin: null, stage: null }
-  return {
-    game: {
-      ...g,
-      players: g.players.map((p) => ({ ...p, cash: hold.cash[p.id] ?? p.cash })),
-      log: g.log.filter((l) => l.id <= hold.logId),
-      eggsSeen: hold.seen,
-      // 付不起进了欠款，也等揭晓之后再显示
-      debt: null,
-      phase: g.phase === 'debt' ? 'end' : g.phase,
-    } as G,
-    spin,
-    stage,
-  }
+  return { game: held, spin, stage }
 }

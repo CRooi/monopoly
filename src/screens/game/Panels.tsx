@@ -159,18 +159,18 @@ export function LogPanel({ game, limit }: { game: GameView; /** 只显示最近�
   const ref = useRef<HTMLDivElement>(null)
   const colorOf = Object.fromEntries(game.players.map((p) => [p.id, p.color]))
   const last = game.log.at(-1)?.id
+  // 只滚记录框自己到最新一条，不带着整个页面跳
   useEffect(() => {
-    ref.current?.scrollIntoView({ block: 'nearest' })
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
   }, [last])
   return (
-    <div className="space-y-1">
+    <div ref={ref} className={cn('space-y-1', !limit && 'max-h-[min(60dvh,36rem)] overflow-y-auto overscroll-contain pr-1')}>
       {(limit ? game.log.slice(-limit) : game.log).map((l) => (
         <div key={l.id} className="flex gap-2 rounded-md bg-paper/90 px-2.5 py-1 text-[13px] leading-snug">
           <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: l.who ? colorOf[l.who] : '#b5a88e' }} />
           <span>{l.text}</span>
         </div>
       ))}
-      <div ref={ref} />
     </div>
   )
 }

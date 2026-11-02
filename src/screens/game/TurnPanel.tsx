@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Crown, DoorOpen, Flag as FlagIcon, Flame, KeyRound, Landmark } from 'lucide-react'
+import { Crown, DoorOpen, Flag as FlagIcon, Flame, Hammer, KeyRound, Landmark } from 'lucide-react'
 import { BAIL, GROUP_COLOR, SPICE_LEVELS, boardFor, themeOf, isBuyable, type ClientMessage, type GameView, type StateView } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
 import { TileMark } from '@/components/art/TileMark'
 import { ChanceMark, Chest, Die } from '@/components/art/icons'
 import { Button } from '@/components/ui/button'
 import type { ConfirmRequest } from '@/components/game/ConfirmDialog'
-import { money } from '@/lib/rules'
+import { canBuild, money, ownedTiles } from '@/lib/rules'
 import type { SpiceStage } from '@/hooks/useSpiceReveal'
 import { Badges } from './Panels'
 import { AuctionView, ChoiceView, ClaimView, DuelView, EggCard, EventChip, GambleView } from './Specials'
@@ -261,6 +261,8 @@ export function TurnPanel({
 
   if (g.phase === 'over') return <Result game={g} onDone={onDone} />
   const tile = boardFor(g.theme)[cur.pos]!
+  // 集齐同色以后才能盖房，盖房按钮藏在资产里不好找，这里有能盖的就提示一下
+  const buildable = mine && ownedTiles(g, cur.id).some((i) => canBuild(g, cur, i))
 
   let status: string
   switch (g.phase) {
@@ -366,6 +368,11 @@ export function TurnPanel({
                   <KeyRound /> 出狱卡
                 </Button>
               )}
+              {buildable && !shaking && (
+                <Button variant="green" size="lg" onClick={onAssets}>
+                  <Hammer /> 盖房
+                </Button>
+              )}
             </>
           )}
           {g.phase === 'buy' && isBuyable(tile) && (
@@ -410,9 +417,16 @@ export function TurnPanel({
             </Button>
           )}
           {g.phase === 'end' && (
-            <Button variant="red" size="lg" className="min-w-24 flex-1" onClick={() => send({ type: 'endTurn' })}>
-              结束回合
-            </Button>
+            <>
+              {buildable && (
+                <Button variant="green" size="lg" onClick={onAssets}>
+                  <Hammer /> 盖房
+                </Button>
+              )}
+              <Button variant="red" size="lg" className="min-w-24 flex-1" onClick={() => send({ type: 'endTurn' })}>
+                结束回合
+              </Button>
+            </>
           )}
         </div>
       )}

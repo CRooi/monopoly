@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { GameView, Ownership } from '@shared/types'
 import { sfx } from '@/lib/sound'
 
@@ -65,19 +65,23 @@ export function useEventReveal<G extends GameView | null>(g: G, enabled = true):
     // 只在新的事件出现时开始播
   }, [holdId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!hold || !g || !g.event) return { game: g, story: null }
   const revealed = step >= lines
-  return {
-    game: revealed
-      ? g
-      : ({
-          ...g,
-          players: g.players.map((p) => ({ ...p, cash: hold.cash[p.id] ?? p.cash })),
-          owners: hold.owners,
-          log: g.log.filter((l) => l.id <= hold.logId),
-          // 回合面板顶上的事件提示条也等揭晓
-          event: null,
-        } as G),
-    story: { event: g.event, step },
-  }
+  // 同一个局面给出同一个对象，避免下游跟着每次重渲染
+  const held = useMemo(
+    () =>
+      !hold || !g || revealed
+        ? g
+        : ({
+            ...g,
+            players: g.players.map((p) => ({ ...p, cash: hold.cash[p.id] ?? p.cash })),
+            owners: hold.owners,
+            log: g.log.filter((l) => l.id <= hold.logId),
+            // 回合面板顶上的事件提示条也等揭晓
+            event: null,
+          } as G),
+    [g, hold, revealed],
+  )
+
+  if (!hold || !g || !g.event) return { game: g, story: null }
+  return { game: held, story: { event: g.event, step } }
 }

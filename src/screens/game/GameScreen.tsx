@@ -114,6 +114,13 @@ export function GameScreen({
     { key: 'log', label: '记录', icon: ScrollText },
   ]
 
+  // 窄屏时侧栏在棋盘下面，切到资产后滚过去
+  const aside = useRef<HTMLElement>(null)
+  const openAssets = () => {
+    setTab('assets')
+    aside.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+
   const leave = () =>
     setConfirm({
       title: '离开房间？',
@@ -193,11 +200,11 @@ export function GameScreen({
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:justify-center">
         <div className="mx-auto w-full max-w-[calc(100dvh-5.5rem)] shrink-0 lg:mx-0 lg:w-[min(calc(100dvh-5.5rem),calc(100%-23rem))] lg:max-w-none">
           <Board game={g} emotes={emotes} onTileClick={setTile} highlight={g.phase === 'buy' ? cur.pos : null}>
-            <TurnPanel state={state} spin={reveal.spin} spinStage={reveal.stage} send={send} confirm={setConfirm} onAssets={() => setTab('assets')} onDone={onDone} />
+            <TurnPanel state={state} spin={reveal.spin} spinStage={reveal.stage} send={send} confirm={setConfirm} onAssets={openAssets} onDone={onDone} />
           </Board>
         </div>
 
-        <aside className="flex min-h-0 flex-1 flex-col gap-2 lg:max-w-[26rem] lg:min-w-[20rem]">
+        <aside ref={aside} className="flex min-h-0 flex-1 flex-col gap-2 lg:max-w-[26rem] lg:min-w-[20rem]">
           <div className="flex gap-1 rounded-xl bg-black/20 p-1">
             {tabs.map((t) => (
               <button
