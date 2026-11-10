@@ -11,10 +11,11 @@ import { cn } from '@/lib/utils'
 
 const EMPTY: TradeSide = { cash: 0, tiles: [], jailCards: 0 }
 
-/** 同色还有房子的地不能交易 */
+/** 抵押给银行的地、同色还有房子的地不能交易 */
 function tradable(g: GameView, id: string) {
   return ownedTiles(g, id).filter((i) => {
     const t = boardFor(g.theme)[i]!
+    if (g.owners[i]?.mortgaged) return false
     return t.kind !== 'country' || groupTiles(t.group).every((j) => (g.owners[j]?.houses ?? 0) === 0)
   })
 }

@@ -200,12 +200,15 @@ describe('欠款与破产', () => {
     const { room, g, act, roll, ids } = setup()
     g.owners[3] = { owner: ids[1]!, houses: 5, mortgaged: false }
     g.owners[6] = { owner: ids[0]!, houses: 0, mortgaged: false }
+    g.owners[8] = { owner: ids[0]!, houses: 0, mortgaged: true }
     g.players[0]!.cash = 10
     dice(room, 1, 2)
     roll(0)
     act(0, { type: 'bankrupt' })
     expect(g.players[0]!.bankrupt).toBe(true)
     expect(g.owners[6]!.owner).toBe(ids[1]!)
+    // 抵押的地押在银行，不给债主
+    expect(g.owners[8]).toBeUndefined()
     expect(g.phase).toBe('over')
     expect(g.result!.standings[0]!.id).toBe(ids[1]!)
     expect(room.inGame).toBe(false)
@@ -376,6 +379,12 @@ describe('交易', () => {
     const { act, ids } = setup()
     expect(() => act(0, { type: 'tradePropose', to: ids[1]!, give: { cash: 0, tiles: [1], jailCards: 0 }, get: { cash: 0, tiles: [], jailCards: 0 } })).toThrow('不属于')
     expect(() => act(0, { type: 'tradePropose', to: ids[1]!, give: { cash: 0, tiles: [], jailCards: 0 }, get: { cash: 9999, tiles: [], jailCards: 0 } })).toThrow('现金不够')
+  })
+
+  test('抵押给银行的地赎回前不能交易', () => {
+    const { g, act, ids } = setup()
+    g.owners[1] = { owner: ids[0]!, houses: 0, mortgaged: true }
+    expect(() => act(0, { type: 'tradePropose', to: ids[1]!, give: { cash: 0, tiles: [1], jailCards: 0 }, get: { cash: 100, tiles: [], jailCards: 0 } })).toThrow('抵押给了银行')
   })
 })
 
@@ -710,6 +719,23 @@ describe('城市彩蛋', () => {
     expect(g.eggsSeen).toContain(14)
     expect(g.players[0]!.pos).toBe(15)
     expect(g.phase).toBe('buy')
+  })
+
+  test('哈尔滨、天津没触发彩蛋时停在原地，可以买', () => {
+    for (const [from, tile] of [
+      [11, 14],
+      [23, 26],
+    ] as const) {
+      const { room, g, act } = setup(2, { theme: 'china' })
+      g.players[0]!.pos = from
+      dice(room, 1, 2)
+      act(0, { type: 'roll' })
+      room.rng = () => 0.999
+      while (g.phase === 'move') act(0, { type: 'step' })
+      expect(g.egg).toBeFalsy()
+      expect(g.players[0]!.pos).toBe(tile)
+      expect(g.phase).toBe('buy')
+    }
   })
 
   test('天津摩天轮，落到一块没人买的地', () => {

@@ -63,6 +63,8 @@ const fail = (msg: string): never => {
 const MAX_LOG = 300
 /** 每人同时最多发起的交易 */
 const MAX_TRADES_PER_PLAYER = 3
+/** 停在打滑、摩天轮彩蛋格时被带走的几率；没触发时可以买这块地或付租金 */
+const MOVE_EGG_CHANCE = 0.3
 
 export interface User {
   id: string
@@ -882,9 +884,11 @@ export class Room {
     const g = this.g
     const p = this.cur()
     const t = this.board[p.pos]!
-    // 城市彩蛋：打滑、摩天轮会把人带走；其他的触发后照常结算这一格
+    // 城市彩蛋：打滑、摩天轮会把人带走，只有一部分几率触发，其余时候这块地照常买卖、收租；
+    // 其他彩蛋触发后照常结算这一格
     const egg = this.theme.eggs?.[p.pos]
-    if (egg && egg !== 'hotpot') {
+    const moves = egg === 'slide' || egg === 'wheel'
+    if (egg && egg !== 'hotpot' && (!moves || this.rng() < MOVE_EGG_CHANCE)) {
       if (this.triggerEgg(egg, p.pos)) return
       if (g.phase === 'over' || p.bankrupt) return
     }
@@ -1534,20 +1538,25 @@ export class Room {
   }
 
   /**
-   * 破产：房子按半价卖回银行，现金和地产交给债主；
-   * 没有债主（欠银行、认输、离开）时地产收归银行，可以重新购买。
+   * 破产：房子按半价卖回银行，现金和没抵押的地产交给债主；
+   * 抵押的地押在银行，收归银行；没有债主（欠银行、认输、离开）时全部地产收归银行。
+   * 收归银行的地可以重新购买。
    */
   private goBankrupt(p: GamePlayer, to: string[], reason: string) {
     const g = this.g
     const heir = to.length === 1 ? this.player(to[0]!) : null
+    const toBank: string[] = []
     for (const [key, o] of Object.entries(g.owners)) {
       if (o.owner !== p.id) continue
       const i = Number(key)
       const t = this.board[i]!
       if (o.houses > 0 && t.kind === 'country') p.cash += (o.houses * t.house) / 2
       o.houses = 0
-      if (heir) o.owner = heir.id
-      else delete g.owners[i]
+      if (heir && !o.mortgaged) o.owner = heir.id
+      else {
+        if (heir) toBank.push(this.tileName(i))
+        delete g.owners[i]
+      }
     }
     if (heir) {
       heir.cash += Math.max(0, p.cash)
@@ -1561,7 +1570,10 @@ export class Room {
     p.inJail = false
     p.bankruptOrder = g.players.filter((x) => x.bankrupt).length
     g.trades = g.trades.filter((t) => t.from !== p.id && t.to !== p.id)
-    this.log(`${reason}，${p.name} 破产${heir ? `，资产归 ${heir.name}` : '，地产收归银行'}`, p.id)
+    const where = heir
+      ? `，资产归 ${heir.name}${toBank.length ? `，抵押中的 ${toBank.join('、')} 收归银行` : ''}`
+      : '，地产收归银行'
+    this.log(`${reason}，${p.name} 破产${where}`, p.id)
     // 正在进行的拍卖、收租、对决里有他，按他不在处理
     if (g.auction?.high?.player === p.id) g.auction.high = null
     const isCur = this.cur().id === p.id
@@ -1687,6 +1699,7 @@ export class Room {
     if (p.jailCards < s.jailCards) fail(`${p.name} 没有那么多出狱卡`)
     for (const i of s.tiles) {
       if (g.owners[i]?.owner !== p.id) fail(`${this.tileName(i)} 不属于 ${p.name}`)
+      if (g.owners[i]!.mortgaged) fail(`${this.tileName(i)} 抵押给了银行，赎回后才能交易`)
       const t = this.board[i]!
       if (t.kind === 'country' && groupTiles(t.group).some((j) => (g.owners[j]?.houses ?? 0) > 0)) fail(`${this.tileName(i)} 同色还有房子，要先卖掉才能交易`)
     }

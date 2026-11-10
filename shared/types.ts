@@ -124,8 +124,8 @@ export type EggKind = 'hotpot' | 'slide' | 'wheel' | 'dig' | 'dimsum' | 'milktea
 /** 彩蛋揭晓后的名字和规则，地产卡上展示 */
 export const EGG_INFO: Record<EggKind, { title: string; rule: string }> = {
   hotpot: { title: '火锅辣度', rule: '停在别人的这块地上要摇辣度，租金 ×1 到 ×3' },
-  slide: { title: '冰面打滑', rule: '停在这里脚下一滑，再往前滑 1 到 3 格' },
-  wheel: { title: '摩天轮', rule: '停在这里坐一圈摩天轮，随机落到一块没人买的地' },
+  slide: { title: '冰面打滑', rule: '停在这里有时会脚下一滑，再往前滑 1 到 3 格' },
+  wheel: { title: '摩天轮', rule: '停在这里有时会坐一圈摩天轮，随机落到一块没人买的地' },
   dig: { title: '挖到文物', rule: '停在这里挖一铲：挖到宝贝领钱，挖坏了交文物保护费' },
   dimsum: { title: '早茶局', rule: '停在这里叹早茶：要么大家请你，要么你请大家，每人 $10' },
   milktea: { title: '奶茶排队', rule: '停在这里排队买奶茶，下回合停一次，奶茶钱银行出，再送 $30' },
