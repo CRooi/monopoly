@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft, Bug, DoorOpen, Eye, Sparkles } from 'lucide-react'
+import { ArrowLeft, Bug, DoorOpen, Eye, Pencil, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { DEFAULT_CONFIG, type RoomConfig } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
@@ -9,6 +9,7 @@ import { TileMarquee } from '@/components/game/TileMarquee'
 import { ConfigForm } from '@/components/game/ConfigForm'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { lobbyNameUrl, useIdentity } from '@/lib/identity'
 import { api, loadAvatar, loadName, saveAvatar, saveName, type Session } from '@/lib/session'
 
 type Mode = 'menu' | 'create' | 'join'
@@ -30,8 +31,12 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
     saveAvatar(i)
   }
 
+  const identity = useIdentity()
+  const me = identity === 'loading' ? null : identity
+  const myName = me?.name ?? name
+
   const needName = () => {
-    const n = name.trim()
+    const n = myName.trim()
     if (!n) {
       toast.error('请先给自己取个名字')
       return null
@@ -67,15 +72,24 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
     }
   }
 
-  const nameInput = (
-    <Input
-      value={name}
-      maxLength={12}
-      onChange={(e) => setName(e.target.value)}
-      placeholder="给自己取个名字"
-      className="h-11 border-ink/15 bg-white shadow-none text-base"
-    />
-  )
+  // 大厅里有名字时显示名字，点了去大厅改；没接入大厅时自己填
+  const nameInput =
+    identity === 'loading' ? (
+      <div className="h-11" />
+    ) : me ? (
+      <a href={lobbyNameUrl()} className="flex h-11 items-center justify-between gap-2 rounded-lg border border-ink/15 bg-white px-2.5 text-base">
+        <span className="truncate">{me.name}</span>
+        <Pencil className="size-4 shrink-0 text-ink/45" />
+      </a>
+    ) : (
+      <Input
+        value={name}
+        maxLength={12}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="给自己取个名字"
+        className="h-11 border-ink/15 bg-white shadow-none text-base"
+      />
+    )
 
   return (
     <div className="relative min-h-dvh overflow-hidden">
@@ -137,7 +151,7 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
               </div>
               <Input
                 value={code}
-                autoFocus={!!name}
+                autoFocus={!!myName}
                 inputMode="numeric"
                 maxLength={4}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
@@ -145,10 +159,10 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
                 placeholder="····"
                 onKeyDown={(e) => e.key === 'Enter' && join()}
               />
-              <Button variant="red" size="xl" className="w-full" disabled={busy || code.length !== 4 || !name.trim()} onClick={() => join()}>
+              <Button variant="red" size="xl" className="w-full" disabled={busy || code.length !== 4 || !myName.trim()} onClick={() => join()}>
                 加入
               </Button>
-              <Button variant="paper" size="lg2" className="w-full" disabled={busy || code.length !== 4 || !name.trim()} onClick={() => join('spectate')}>
+              <Button variant="paper" size="lg2" className="w-full" disabled={busy || code.length !== 4 || !myName.trim()} onClick={() => join('spectate')}>
                 <Eye /> 观战
               </Button>
             </div>
