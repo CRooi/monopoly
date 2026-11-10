@@ -156,6 +156,19 @@ app.get('/api/rooms/:code', wrap((req, res) => {
   })
 }))
 
+// 公开的房间列表，游戏大厅用
+app.get('/api/rooms', (_req, res) => {
+  res.json(
+    [...rooms.values()].map((r) => ({
+      code: r.d.code,
+      host: r.d.users[r.d.hostId]?.name ?? '',
+      players: r.d.members.length,
+      inGame: r.inGame,
+      createdAt: r.d.createdAt,
+    })),
+  )
+})
+
 registerAdminRoutes(app, rooms, online)
 
 // 生产环境：托管前端构建产物
