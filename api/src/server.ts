@@ -6,7 +6,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import type { ClientMessage, ServerMessage } from '../../shared/types'
 import { deleteRoom, loadRooms, saveRoom } from './db'
 import { recordAction, recordRoomClosed, registerAdminRoutes, snapshotBefore, verifyAdminToken } from './admin'
-import { GameError, ROOM_IDLE_MS, Room, genCode, idleText } from './room'
+import { GameError, ROOM_IDLE_MS, Room, cleanPid, genCode, idleText } from './room'
 
 /** 本次启动的 id：前端重连后发现变了，就刷新页面换上新版前端 */
 const BOOT_ID = crypto.randomUUID()
@@ -118,6 +118,7 @@ function wrap(fn: (req: express.Request, res: express.Response) => void) {
 app.post('/api/rooms', wrap((req, res) => {
   const code = genCode((c) => rooms.has(c))
   const { room, user } = Room.create(code, req.body?.config, req.body?.name, req.body?.avatar)
+  user.pid = cleanPid(req.body?.pid)
   track(room)
   room.touch()
   saveRoom(room.d)
@@ -128,6 +129,7 @@ app.post('/api/rooms/:code/join', wrap((req, res) => {
   const room = rooms.get(String(req.params.code))
   if (!room) return void res.status(404).json({ error: '房间不存在' })
   const user = room.join(req.body?.name, req.body?.avatar)
+  user.pid = cleanPid(req.body?.pid)
   room.touch()
   saveRoom(room.d)
   broadcast(room)
@@ -163,6 +165,7 @@ app.get('/api/rooms', (_req, res) => {
       code: r.d.code,
       host: r.d.users[r.d.hostId]?.name ?? '',
       players: r.d.members.length,
+      members: r.d.members.map((id) => ({ name: r.d.users[id]?.name ?? '', pid: r.d.users[id]?.pid ?? null })),
       inGame: r.inGame,
       createdAt: r.d.createdAt,
     })),

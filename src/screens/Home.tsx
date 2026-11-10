@@ -50,7 +50,7 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
     if (!n) return
     setBusy(true)
     try {
-      onEnter(await api<Session>('/api/rooms', { name: n, avatar, config }))
+      onEnter(await api<Session>('/api/rooms', { name: n, pid: me?.id, avatar, config }))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -64,7 +64,7 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
     if (!/^\d{4}$/.test(code)) return void toast.error('请输入 4 位房间码')
     setBusy(true)
     try {
-      onEnter(await api<Session>(`/api/rooms/${code}/${as}`, { name: n, avatar }))
+      onEnter(await api<Session>(`/api/rooms/${code}/${as}`, { name: n, pid: me?.id, avatar }))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {

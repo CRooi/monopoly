@@ -11,6 +11,8 @@ const LOBBY: string =
 export interface Identity {
   id: string
   name: string
+  emoji: string
+  color: string
 }
 
 /** 去大厅取名字或改名字，完了回到当前页面 */

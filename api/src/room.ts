@@ -70,7 +70,12 @@ export interface User {
   id: string
   token: string
   name: string
+  /** 大厅玩家 id，大厅房间列表靠它显示头像 */
+  pid?: string
 }
+
+/** 客户端带来的大厅玩家 id */
+export const cleanPid = (v: unknown) => (typeof v === 'string' && /^[\w-]{1,32}$/.test(v) ? v : undefined)
 
 /** 对局的完整状态：比发给客户端的视图多出牌堆顺序和内部计数 */
 /** 每个人这一局的统计，结算时挑高光 */
