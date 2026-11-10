@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ArrowLeft, Bug, DoorOpen, Eye, Pencil, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { DEFAULT_CONFIG, type RoomConfig } from '@shared/types'
+import { AVATARS, DEFAULT_CONFIG, type RoomConfig } from '@shared/types'
 import { Avatar } from '@/components/art/Avatar'
 import { Logo } from '@/components/art/icons'
 import { AvatarPicker } from '@/components/game/AvatarPicker'
@@ -34,6 +34,10 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
   const identity = useIdentity()
   const me = identity === 'loading' ? null : identity
   const myName = me?.name ?? name
+  // 大厅里选了头像就用大厅的，不再自己挑
+  const lobbyAvatar = me ? AVATARS.findIndex((a) => a.e === me.emoji) : -1
+  const face = lobbyAvatar >= 0 ? { index: lobbyAvatar, bg: me?.color } : { index: avatar }
+  const lobby = { pid: me?.id, emoji: me?.emoji, color: me?.color }
 
   const needName = () => {
     const n = myName.trim()
@@ -50,7 +54,7 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
     if (!n) return
     setBusy(true)
     try {
-      onEnter(await api<Session>('/api/rooms', { name: n, pid: me?.id, avatar, config }))
+      onEnter(await api<Session>('/api/rooms', { name: n, ...lobby, avatar, config }))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -64,7 +68,7 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
     if (!/^\d{4}$/.test(code)) return void toast.error('请输入 4 位房间码')
     setBusy(true)
     try {
-      onEnter(await api<Session>(`/api/rooms/${code}/${as}`, { name: n, pid: me?.id, avatar }))
+      onEnter(await api<Session>(`/api/rooms/${code}/${as}`, { name: n, ...lobby, avatar }))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -110,10 +114,10 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
           </div>
           <div className="panel animate-rise space-y-4 p-5">
             <div className="flex items-center gap-3">
-              <Avatar index={avatar} size={52} />
+              <Avatar {...face} size={52} />
               <div className="min-w-0 flex-1">{nameInput}</div>
             </div>
-            <AvatarPicker value={avatar} onChange={pickAvatar} />
+            {lobbyAvatar < 0 && <AvatarPicker value={avatar} onChange={pickAvatar} />}
             <Button variant="red" size="xl" className="w-full" onClick={() => needName() && setMode('create')}>
               <Sparkles /> 创建房间
             </Button>
@@ -146,7 +150,7 @@ export function Home({ onEnter }: { onEnter: (s: Session) => void }) {
             <div className="panel animate-rise space-y-5 p-5">
               <h2 className="text-center font-display text-2xl">输入房间码</h2>
               <div className="flex items-center gap-3">
-                <Avatar index={avatar} size={44} />
+                <Avatar {...face} size={44} />
                 <div className="min-w-0 flex-1">{nameInput}</div>
               </div>
               <Input

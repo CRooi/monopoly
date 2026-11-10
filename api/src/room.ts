@@ -24,6 +24,7 @@ import {
   PLAYER_COLORS,
   ROUND_OPTIONS,
   START_CASH_OPTIONS,
+  AVATARS,
   cleanAvatar,
   UTILITY_MULT,
   groupTiles,
@@ -72,10 +73,19 @@ export interface User {
   name: string
   /** 大厅玩家 id，大厅房间列表靠它显示头像 */
   pid?: string
+  /** 大厅里选的头像底色；有它时头像用大厅的 emoji 和颜色 */
+  avatarBg?: string
 }
 
 /** 客户端带来的大厅玩家 id */
 export const cleanPid = (v: unknown) => (typeof v === 'string' && /^[\w-]{1,32}$/.test(v) ? v : undefined)
+
+/** 大厅里选的头像：emoji 对到本游戏的头像，底色用大厅选的颜色 */
+function lobbyFace(body: { emoji?: unknown; color?: unknown } | undefined) {
+  const i = AVATARS.findIndex((a) => a.e === body?.emoji)
+  const color = typeof body?.color === 'string' && /^#[0-9a-f]{6}$/i.test(body.color) ? body.color : null
+  return i >= 0 && color ? { avatar: i, bg: color } : null
+}
 
 /** 对局的完整状态：比发给客户端的视图多出牌堆顺序和内部计数 */
 /** 每个人这一局的统计，结算时挑高光 */
@@ -349,6 +359,15 @@ export class Room {
     return user
   }
 
+  /** 记下大厅身份：玩家 id，以及大厅里选的头像 */
+  linkLobby(user: User, body: { pid?: unknown; emoji?: unknown; color?: unknown } | undefined) {
+    user.pid = cleanPid(body?.pid)
+    const face = lobbyFace(body)
+    if (!face || !this.d.members.includes(user.id)) return
+    this.d.avatars[user.id] = face.avatar
+    user.avatarBg = face.bg
+  }
+
   /** 以观战身份加入：只能看不能操作，开局前和游戏中都可以加入 */
   spectate(name: unknown): User {
     if (!this.d.config.allowSpectators) fail('本房间不允许观战')
@@ -391,6 +410,7 @@ export class Room {
         needLobby()
         if (!this.d.members.includes(userId)) fail('观战者不需要头像')
         this.d.avatars[userId] = cleanAvatar(msg.avatar)
+        delete this.d.users[userId]!.avatarBg
         return {}
       case 'kick': {
         needHost()
@@ -562,6 +582,7 @@ export class Room {
       id,
       name: this.d.users[id]!.name,
       avatar: this.d.avatars[id] ?? 0,
+      avatarBg: this.d.users[id]!.avatarBg,
       color: PLAYER_COLORS[ids.indexOf(id) % PLAYER_COLORS.length]!,
       cash: this.d.config.startCash,
       pos: 0,
@@ -1786,7 +1807,7 @@ export class Room {
         if (a.bankrupt && b.bankrupt) return (b.bankruptOrder ?? 0) - (a.bankruptOrder ?? 0)
         return this.worth(b) - this.worth(a)
       })
-      .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, worth: this.worth(p), bankrupt: p.bankrupt, badges: p.badges ?? [] }))
+      .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, avatarBg: p.avatarBg, color: p.color, worth: this.worth(p), bankrupt: p.bankrupt, badges: p.badges ?? [] }))
     g.phase = 'over'
     g.debt = null
     g.trades = []
@@ -1836,7 +1857,7 @@ export class Room {
         code: meta.code,
         config: meta.config,
         hostId: meta.hostId,
-        members: game.players.map((p) => ({ id: p.id, name: p.name, online: true, avatar: p.avatar, color: p.color })),
+        members: game.players.map((p) => ({ id: p.id, name: p.name, online: true, avatar: p.avatar, avatarBg: p.avatarBg, color: p.color })),
         spectators: [],
         idleRemainingMs: ROOM_IDLE_MS,
         idleWarnMs: ROOM_IDLE_WARN_MS,
@@ -1865,6 +1886,7 @@ export class Room {
           name: d.users[id]?.name ?? '?',
           online: online(id),
           avatar: d.avatars[id] ?? 0,
+          avatarBg: d.users[id]?.avatarBg,
           color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
         })),
         spectators: d.spectators.map((id) => ({ id, name: d.users[id]?.name ?? '?', online: online(id) })),

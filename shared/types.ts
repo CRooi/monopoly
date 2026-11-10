@@ -322,6 +322,8 @@ export interface GamePlayer {
   id: string
   name: string
   avatar: number
+  /** 大厅里选的头像底色；没有时用头像自带的底色 */
+  avatarBg?: string
   color: string
   cash: number
   pos: number
@@ -399,6 +401,8 @@ export interface Standing {
   id: string
   name: string
   avatar: number
+  /** 大厅里选的头像底色；没有时用头像自带的底色 */
+  avatarBg?: string
   color: string
   worth: number
   bankrupt: boolean
@@ -507,6 +511,7 @@ export interface MemberView {
   name: string
   online: boolean
   avatar: number
+  avatarBg?: string
   color: string
 }
 

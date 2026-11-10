@@ -300,7 +300,7 @@ export function TurnPanel({
   return (
     <div className="flex w-[min(19rem,86%)] flex-col items-center gap-3 rounded-2xl border border-ink/10 bg-white/92 p-3.5 shadow-[0_10px_30px_-12px_rgb(0_0_0/0.35)] backdrop-blur-sm sm:p-4">
       <div className="flex w-full items-center gap-2.5">
-        <Avatar index={cur.avatar} size={36} ring={cur.color} className="border-white" />
+        <Avatar index={cur.avatar} bg={cur.avatarBg} size={36} ring={cur.color} className="border-white" />
         <div className="min-w-0 flex-1 text-left">
           <div className="truncate text-[15px] leading-tight font-semibold">{mine ? '你的回合' : cur.name}</div>
           <div className="text-xs leading-tight text-ink/55">{status}</div>
@@ -448,7 +448,7 @@ function Result({ game, onDone }: { game: GameView; onDone?: () => void }) {
             className={cn('flex items-center gap-2 rounded-lg px-2.5 py-1.5', i === 0 && won ? 'bg-[#fff3c4] ring-1 ring-gold' : 'bg-paper')}
           >
             <span className="w-4 text-center text-sm font-semibold text-ink/50">{i + 1}</span>
-            <Avatar index={s.avatar} size={28} ring={s.color} className="border-white" />
+            <Avatar index={s.avatar} bg={s.avatarBg} size={28} ring={s.color} className="border-white" />
             <div className="min-w-0 flex-1 text-left">
               <div className="truncate text-sm font-medium">{s.name}</div>
               <Badges badges={s.badges} />

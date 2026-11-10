@@ -57,7 +57,7 @@ function SideEditor({
   return (
     <div className="space-y-2 rounded-lg border border-ink/10 bg-paper/70 p-2">
       <div className="flex items-center gap-2">
-        <Avatar index={p.avatar} size={24} ring={p.color} />
+        <Avatar index={p.avatar} bg={p.avatarBg} size={24} ring={p.color} />
         <span className="font-medium">{p.name}</span>
         <span className="ml-auto text-xs text-ink/60">现金 {money(p.cash)}</span>
       </div>
@@ -175,10 +175,10 @@ export function TradeCard({ game, trade, meId, send }: { game: GameView; trade: 
   return (
     <div className={cn('panel-flat space-y-2 p-3', incoming && 'bg-[#fff8dc] ring-2 ring-gold')}>
       <div className="flex items-center gap-2 text-sm">
-        <Avatar index={from.avatar} size={22} ring={from.color} />
+        <Avatar index={from.avatar} bg={from.avatarBg} size={22} ring={from.color} />
         <span className="font-medium">{from.name}</span>
         <ArrowLeftRight className="size-3.5 text-ink/50" />
-        <Avatar index={to.avatar} size={22} ring={to.color} />
+        <Avatar index={to.avatar} bg={to.avatarBg} size={22} ring={to.color} />
         <span className="font-medium">{to.name}</span>
       </div>
       <div className="grid grid-cols-[auto_1fr] items-start gap-x-2 gap-y-1 text-xs">

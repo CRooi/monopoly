@@ -438,7 +438,7 @@ export function Board({
               }}
             >
               <Avatar
-                index={p.avatar}
+                index={p.avatar} bg={p.avatarBg}
                 size={null}
                 ring={p.color}
                 className={cn('-translate-x-1/2 -translate-y-1/2 border-[0.3cqw] border-white shadow-[0_0.3cqw_0.8cqw_rgb(0_0_0/0.35)]', active && 'animate-pulse-ring')}

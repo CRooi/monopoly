@@ -65,7 +65,7 @@ export function ClaimView({ game, meId, send }: { game: GameView; meId: string; 
         </Button>
       ) : (
         <div className="flex items-center justify-center gap-2 text-sm">
-          <Avatar index={owner.avatar} size={24} ring={owner.color} className="border-white" />
+          <Avatar index={owner.avatar} bg={owner.avatarBg} size={24} ring={owner.color} className="border-white" />
           <span>
             {meId === payer.id ? '屏住呼吸，' : ''}看 {owner.name} 喊不喊收租
           </span>
@@ -97,7 +97,7 @@ export function AuctionView({ game, me, send }: { game: GameView; me?: GamePlaye
       <div className="flex items-center justify-center gap-2">
         {high ? (
           <>
-            <Avatar index={high.avatar} size={28} ring={high.color} className="border-white" />
+            <Avatar index={high.avatar} bg={high.avatarBg} size={28} ring={high.color} className="border-white" />
             <span className="text-sm">{high.name}</span>
             <span key={a.high!.amount} className="animate-pop text-xl font-bold tabular-nums text-cash">
               {money(a.high!.amount)}
@@ -140,7 +140,7 @@ function DuelSide({ game, id, align }: { game: GameView; id: string; align: 'lef
   const lost = d.done && d.winner && d.winner !== id
   return (
     <div className={cn('flex flex-1 flex-col items-center gap-1 rounded-lg py-1.5', won && 'bg-[#fff3c4] ring-2 ring-gold', lost && 'opacity-50')}>
-      <Avatar index={p.avatar} size={32} ring={p.color} className="border-white" />
+      <Avatar index={p.avatar} bg={p.avatarBg} size={32} ring={p.color} className="border-white" />
       <span className={cn('max-w-full truncate text-xs', align === 'right' && 'text-right')}>{p.name}</span>
       <div key={dice ? 'rolled' : 'idle'} className={cn('flex gap-1', dice ? 'animate-pop' : 'animate-idle-dice')}>
         <Die value={dice?.[0] ?? 0} className="size-7" />
@@ -168,7 +168,7 @@ export function DuelView({ game, meId, send }: { game: GameView; meId: string; s
           <div className="flex flex-wrap justify-center gap-1.5">
             {others.map((p) => (
               <Button key={p.id} variant="paper" size="sm" onClick={() => send({ type: 'duelPick', target: p.id })}>
-                <Avatar index={p.avatar} size={18} ring={p.color} className="border-white" /> {p.name}
+                <Avatar index={p.avatar} bg={p.avatarBg} size={18} ring={p.color} className="border-white" /> {p.name}
               </Button>
             ))}
             <Button variant="ghost" size="sm" onClick={() => send({ type: 'duelPick', target: null })}>

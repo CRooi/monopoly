@@ -138,7 +138,7 @@ export function TileDialog({
               <div className="flex items-center gap-2 border-t border-ink/10 bg-paper px-3 py-2.5">
                 {owner ? (
                   <>
-                    <Avatar index={owner.avatar} size={28} ring={owner.color} />
+                    <Avatar index={owner.avatar} bg={owner.avatarBg} size={28} ring={owner.color} />
                     <span className="font-medium">{owner.name}</span>
                     {own && own.houses > 0 && <Buildings houses={own.houses} className="h-4" />}
                     {own?.mortgaged && <span className="ml-auto rounded bg-ink px-1.5 text-xs text-paper">抵押中</span>}

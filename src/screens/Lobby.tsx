@@ -99,8 +99,8 @@ export function Lobby({
         <div className="grid grid-cols-2 gap-2">
           {room.members.map((m) => (
             <div key={m.id} className={cn('panel-flat flex items-center gap-2 px-2.5 py-2', m.id === me.id && 'ring-2 ring-gold')}>
-              <button type="button" disabled={m.id !== me.id} onClick={() => setPicking(true)} className="shrink-0">
-                <Avatar index={m.avatar} size={36} ring={m.color} className="border-white" />
+              <button type="button" disabled={m.id !== me.id || !!m.avatarBg} onClick={() => setPicking(true)} className="shrink-0">
+                <Avatar index={m.avatar} bg={m.avatarBg} size={36} ring={m.color} className="border-white" />
               </button>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1">

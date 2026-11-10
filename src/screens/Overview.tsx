@@ -80,7 +80,7 @@ function Screen({ code }: { code: string }) {
             <div className="flex flex-wrap justify-center gap-6">
               {state.room.members.map((m) => (
                 <div key={m.id} className="flex flex-col items-center gap-2">
-                  <Avatar index={m.avatar} size={88} ring={m.color} />
+                  <Avatar index={m.avatar} bg={m.avatarBg} size={88} ring={m.color} />
                   <span className="font-display text-xl text-paper">{m.name}</span>
                 </div>
               ))}

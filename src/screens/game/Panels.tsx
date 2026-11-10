@@ -38,7 +38,7 @@ export function PlayersPanel({
             className={cn('panel-flat flex flex-col gap-1.5 px-3 py-2', active && 'bg-[#fff8dc] ring-2 ring-gold', p.bankrupt && 'opacity-55')}
           >
             <div className="flex items-center gap-2">
-              <Avatar index={p.avatar} size={34} ring={p.color} className="border-white" />
+              <Avatar index={p.avatar} bg={p.avatarBg} size={34} ring={p.color} className="border-white" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1">
                   <span className="truncate font-medium">{p.name}</span>
