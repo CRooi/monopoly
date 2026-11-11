@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-// 用 Web Audio 现场合成的简单音效，不需要音频文件
+// 用 Web Audio 播放 public/sfx 里的录音，第一次点页面时整批预加载
 
 const KEY = 'mf.muted'
 let muted = (() => {
@@ -32,121 +32,82 @@ export function useMuted() {
   )
 }
 
+interface Spec {
+  gain: number
+  vary?: number
+}
+
+/**
+ * 音效素材都是 Freesound 上的 CC0 录音（public/sfx），已裁好、峰值归一到 -1 dBFS。
+ * gain 按各段的响度对齐；vary 是每次随机变调的幅度，连着响的声音不至于一模一样。
+ * 注释里是 Freesound 编号，换素材时按编号回去找原文件。
+ */
+const SOUNDS = {
+  dice: { gain: 1, vary: 0.06 }, // 629982 两颗骰子在木桌上滚
+  land: { gain: 1, vary: 0.05 }, // 629982 骰子落桌的那一下
+  tap: { gain: 0.32, vary: 0.05 }, // 218460 敲木鱼
+  step: { gain: 0.8, vary: 0.1 }, // 547414 棋子落在木头上
+  card: { gain: 1 }, // 84322 在桌上翻开一张牌
+  buy: { gain: 1 }, // 209578 收银机
+  coin: { gain: 1 }, // 162195 一把硬币落在桌上
+  pay: { gain: 1, vary: 0.05 }, // 18623 抽出一张钞票
+  ring: { gain: 0.72 }, // 173941 木槌敲一下：有租可收、有人出价
+  jail: { gain: 0.72 }, // 613498 牢门关上
+  turn: { gain: 0.4 }, // 789793 一声软“啵”，滤掉高频，加了短短的余音
+  heartbeat: { gain: 0.58 }, // 369017 一下心跳
+  reveal: { gain: 0.58 }, // 715067 闪亮的揭晓
+} satisfies Record<string, Spec>
+
+type Sfx = keyof typeof SOUNDS
+
 let ctx: AudioContext | null = null
 function audio() {
   if (muted) return null
   try {
     ctx ??= new AudioContext()
     if (ctx.state === 'suspended') void ctx.resume()
+    load(ctx)
     return ctx
   } catch {
     return null
   }
 }
 
-/** 一个音：频率从 f0 滑到 f1 */
-function tone(f0: number, f1: number, dur: number, { type = 'sine' as OscillatorType, vol = 0.15, delay = 0 } = {}) {
-  const a = audio()
-  if (!a) return
-  const t = a.currentTime + delay
-  const o = a.createOscillator()
-  const g = a.createGain()
-  o.type = type
-  o.frequency.setValueAtTime(f0, t)
-  o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur)
-  g.gain.setValueAtTime(0.0001, t)
-  g.gain.exponentialRampToValueAtTime(vol, t + 0.01)
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-  o.connect(g).connect(a.destination)
-  o.start(t)
-  o.stop(t + dur + 0.02)
+/** 解码好的音频；失败的移出 requested，下次再试 */
+const buffers = new Map<Sfx, AudioBuffer>()
+const requested = new Set<Sfx>()
+
+function load(a: AudioContext) {
+  for (const name of Object.keys(SOUNDS) as Sfx[]) {
+    if (requested.has(name)) continue
+    requested.add(name)
+    fetch(`/sfx/${name}.mp3`)
+      .then((r) => r.arrayBuffer())
+      .then((data) => a.decodeAudioData(data))
+      .then((buf) => buffers.set(name, buf))
+      .catch(() => requested.delete(name))
+  }
 }
 
-/** 一段噪声，用来做骰子碰撞、翻牌的声音 */
-function noise(dur: number, { vol = 0.2, delay = 0, freq = 2000, q = 1 } = {}) {
+// 第一次点页面就建好 AudioContext 并开始加载，第一声不会因为还没解码而丢掉
+if (typeof window !== 'undefined') {
+  for (const type of ['pointerup', 'touchend', 'click', 'keydown']) {
+    window.addEventListener(type, () => audio(), { capture: true, passive: true })
+  }
+}
+
+function play(name: Sfx) {
   const a = audio()
-  if (!a) return
-  const t = a.currentTime + delay
-  const buf = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate)
-  const data = buf.getChannelData(0)
-  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length)
+  const buf = buffers.get(name)
+  if (!a || !buf) return
+  const { gain, vary = 0 }: Spec = SOUNDS[name]
   const src = a.createBufferSource()
   src.buffer = buf
-  const f = a.createBiquadFilter()
-  f.type = 'bandpass'
-  f.frequency.value = freq
-  f.Q.value = q
+  if (vary) src.playbackRate.value = 1 + (Math.random() * 2 - 1) * vary
   const g = a.createGain()
-  g.gain.value = vol
-  src.connect(f).connect(g).connect(a.destination)
-  src.start(t)
+  g.gain.value = gain
+  src.connect(g).connect(a.destination)
+  src.start()
 }
 
-export const sfx = {
-  /** 骰子在桌上滚 */
-  dice() {
-    for (let i = 0; i < 7; i++) noise(0.05, { vol: 0.35 - i * 0.03, delay: i * 0.11 + Math.random() * 0.04, freq: 1800 + Math.random() * 1500, q: 3 })
-  },
-  /** 摇骰子时点一下，像敲木鱼 */
-  tap() {
-    tone(820, 620, 0.09, { type: 'sine', vol: 0.18 })
-    noise(0.03, { vol: 0.15, freq: 2500, q: 4 })
-  },
-  /** 叮铃：有租可收、有人出价 */
-  ring() {
-    tone(1318, 1318, 0.09, { type: 'square', vol: 0.06 })
-    tone(1568, 1568, 0.09, { type: 'square', vol: 0.06, delay: 0.1 })
-    tone(1318, 1318, 0.09, { type: 'square', vol: 0.06, delay: 0.2 })
-  },
-  /** 心跳：揭晓前的停顿 */
-  heartbeat() {
-    tone(70, 50, 0.12, { type: 'sine', vol: 0.5 })
-    tone(70, 50, 0.12, { type: 'sine', vol: 0.4, delay: 0.18 })
-  },
-  /** 揭晓 */
-  reveal() {
-    noise(0.25, { vol: 0.25, freq: 900, q: 0.6 })
-    tone(392, 392, 0.12, { type: 'triangle', vol: 0.14 })
-    tone(523, 523, 0.12, { type: 'triangle', vol: 0.14, delay: 0.1 })
-    tone(784, 784, 0.35, { type: 'triangle', vol: 0.14, delay: 0.2 })
-  },
-  /** 骰子落定 */
-  land() {
-    noise(0.06, { vol: 0.5, freq: 1200, q: 2 })
-    noise(0.05, { vol: 0.35, delay: 0.09, freq: 1600, q: 2 })
-  },
-  /** 棋子走一格 */
-  step() {
-    tone(520, 380, 0.07, { type: 'triangle', vol: 0.08 })
-  },
-  /** 收钱 */
-  coin() {
-    tone(988, 988, 0.08, { type: 'square', vol: 0.05 })
-    tone(1319, 1319, 0.25, { type: 'square', vol: 0.05, delay: 0.08 })
-  },
-  /** 付钱 */
-  pay() {
-    tone(440, 330, 0.12, { type: 'triangle', vol: 0.12 })
-    tone(330, 220, 0.18, { type: 'triangle', vol: 0.1, delay: 0.1 })
-  },
-  /** 买地、盖房 */
-  buy() {
-    tone(523, 523, 0.1, { type: 'triangle', vol: 0.12 })
-    tone(659, 659, 0.1, { type: 'triangle', vol: 0.12, delay: 0.09 })
-    tone(784, 784, 0.22, { type: 'triangle', vol: 0.12, delay: 0.18 })
-  },
-  /** 翻牌 */
-  card() {
-    noise(0.12, { vol: 0.25, freq: 3500, q: 0.8 })
-    tone(600, 900, 0.12, { type: 'sine', vol: 0.06, delay: 0.08 })
-  },
-  /** 轮到自己 */
-  turn() {
-    tone(660, 660, 0.12, { vol: 0.14 })
-    tone(880, 880, 0.3, { vol: 0.14, delay: 0.12 })
-  },
-  /** 进监狱 */
-  jail() {
-    tone(220, 110, 0.5, { type: 'sawtooth', vol: 0.06 })
-  },
-}
+export const sfx = Object.fromEntries((Object.keys(SOUNDS) as Sfx[]).map((name) => [name, () => play(name)])) as Record<Sfx, () => void>
