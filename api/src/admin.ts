@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto'
 import path from 'node:path'
 import type express from 'express'
 import type { ClientMessage, ReplayFile } from '../../shared/types'
@@ -12,6 +11,7 @@ import {
   listGameRecords,
 } from './db'
 import { type GameState, type ReplayMeta, ROOM_IDLE_MS, Room } from './room'
+import { adminUser, registerSsoRoutes } from './sso'
 
 // ---------------- 鉴权 ----------------
 
@@ -19,13 +19,6 @@ const TOKEN_TTL = 12 * 3600 * 1000
 
 const tokens = new Map<string, number>()
 
-export const adminEnabled = () => !!process.env.ADMIN_PASSWORD
-
-function checkPassword(input: unknown) {
-  const expected = Buffer.from(process.env.ADMIN_PASSWORD ?? '')
-  const got = Buffer.from(String(input ?? ''))
-  return expected.length > 0 && got.length === expected.length && timingSafeEqual(got, expected)
-}
 
 export function verifyAdminToken(token: string | null | undefined) {
   if (!token) return false
@@ -130,12 +123,11 @@ export function recordRoomClosed(room: Room, reason: string) {
 // ---------------- 接口 ----------------
 
 export function registerAdminRoutes(app: express.Express, rooms: Map<string, Room>, online: (code: string) => (id: string) => boolean) {
-  app.post('/api/admin/login', async (req, res) => {
-    if (!adminEnabled()) return void res.status(503).json({ error: '未配置管理员密码（ADMIN_PASSWORD）' })
-    if (!checkPassword(req.body?.password)) {
-      await Bun.sleep(600) // 减缓暴力尝试
-      return void res.status(401).json({ error: '密码错误' })
-    }
+  registerSsoRoutes(app)
+
+  // 凭大厅 OAuth 的登录态换一个后台令牌
+  app.post('/api/admin/login', (req, res) => {
+    if (!adminUser(req)) return void res.status(401).json({ error: '未登录' })
     const token = crypto.randomUUID() + crypto.randomUUID()
     tokens.set(token, Date.now() + TOKEN_TTL)
     res.json({ token })

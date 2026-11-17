@@ -17,3 +17,13 @@ export const saveAdminToken = (t: string | null) => {
     /* ignore */
   }
 }
+
+/** 去游戏大厅登录，登完回到后台 */
+export const toLogin = () => location.replace(`/api/auth/login?next=${encodeURIComponent('/?admin')}`)
+
+/** 退出后台登录，回到首页 */
+export async function signOut() {
+  saveAdminToken(null)
+  await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+  location.href = '/'
+}

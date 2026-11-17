@@ -12,6 +12,7 @@ import { WatchView } from '../game/WatchView'
 import { AuthError, adminApi, downloadReplay, type AdminGame, type AdminRoom, type GameEvent } from './adminApi'
 import { duration, fmtDateTime, gameStatus } from './format'
 import { ReplayPlayer } from './ReplayPlayer'
+import { signOut } from './token'
 
 type View = { kind: 'list' } | { kind: 'live'; code: string } | { kind: 'replay'; id: string }
 
@@ -74,7 +75,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
               </Button>
             </>
           )}
-          <Button variant="ghost" size="sm" className="text-paper hover:bg-white/10 hover:text-paper" onClick={onLogout}>
+          <Button variant="ghost" size="sm" className="text-paper hover:bg-white/10 hover:text-paper" onClick={signOut}>
             <LogOut /> 退出
           </Button>
         </div>

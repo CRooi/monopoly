@@ -42,8 +42,8 @@ bun run dev       # 前端 http://localhost:5173，/api 与 /ws 代理到后端
 
 ## 管理后台
 
-1. 复制 `api/.env.example` 为 `api/.env`，设置 `ADMIN_PASSWORD`（未设置时后台不可用）
-2. 打开 `/?admin`，输入密码进入后台：
+1. 后台登录走游戏大厅（game.yowot.cn）的 OAuth，在 `api/.env` 里填上和大厅相同的 `SESSION_SECRET`（未设置时后台不可用）
+2. 打开 `/?admin`，没登录时会跳到大厅登录，登完自动回来：
    - 房间：查看所有房间、在线人数和空闲倒计时，可以实时观看对局
    - 对局记录：每局的每次操作都会记录到 SQLite，可按真实时间回放，拖动或点击任意事件查看当时的局面
    - 下载回放：导出 `.mfreplay` 文件，在 `/?replay` 本地回放查看器里离线播放
